@@ -290,8 +290,17 @@ huapai/
 ### 实测环境备忘
 
 - 本机 **无 JDK**，Android 本地构建不可用 → APK 走 CI（§8）。
-- `pnpm` 必须用 bundled 版本：`node C:\Users\shaolei\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\pnpm\bin\pnpm.mjs`（不在 PATH 上）。
+- `pnpm` 必须用 bundled 版本：`node C:\Users\shaolei\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\pnpm\bin\pnpm.mjs`（**不在 PATH 上**）。
+  - 因此根 `package.json` 里 `pnpm -r <script>` 这类脚本在本机直接失败（`'pnpm' is not recognized`）。
+    **这只是本机环境问题**：CI 由 `pnpm/action-setup` 装上 pnpm 后脚本正常；
+    本机要跑根脚本，在 `.cache/bin/pnpm.cmd` 放一个转发 shim 并加进 PATH 即可（`.cache/` 已 gitignore）：
+    `@echo off` + `node "<pnpm.mjs 绝对路径>" %*`
+  - 已用该 shim 实测：`pnpm lint` / `pnpm typecheck` / `pnpm test` / `pnpm build` **全部通过**。
+- `pnpm install` 专用参数（如 `--store-dir`）**不能**跟在 `pnpm <script>` 后面（`run` 不认这个选项），
+  只在 install 时传。
 - 沙箱禁止写工作区外目录时，npm 缓存需重定向：`npm_config_cache=<repo>/.cache/npm`；pnpm store 用 `--store-dir <repo>/.cache/pnpm-store`。
+- `pnpm-workspace.yaml` 里固定了 `nodeLinker: hoisted`，是**刻意为之**（见 §3 注释），别改回默认，
+  否则 Windows 上会踩 `ERR_PNPM_SYMLINK_FAILED`。
 - **实测版本**：Node 24.14 / pnpm 11.7 / git 2.55 / React 19.3 / Vite 8.3 / Vitest 5.0 / ESLint 10.11 / **TypeScript 6.0.3**。
   TS 之所以锁 6 而不是最新的 7：`typescript-eslint` 的 peer 范围是 `>=4.8.4 <6.1.0`，TS 7 会直接报
   `typescript-eslint does not support TS 7.0`，lint 整条链就断了。
