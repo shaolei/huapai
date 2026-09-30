@@ -277,12 +277,21 @@ huapai/
 | 里程碑 | 状态 | 备注 |
 |---|---|---|
 | 前置权限修复 | ✅ 完成 | `grant_dacl` verified；回滚命令见 §2 |
-| M0 环境与骨架 | ✅ 完成 | pnpm workspace + Vite/React/Vitest/ESLint；横屏三带占位版面 |
-| M1 牌库与数据结构 | ⏳ 进行中 | |
-| M2 胡牌分解 + 算胡 | ⬜ 未开始 | |
+| M0 环境与骨架 | ✅ 完成 | pnpm workspace + Vite/React/Vitest/ESLint；横屏三带占位版面；tag `v0.1.0` |
+| M1 牌库与数据结构 | ✅ 完成 | `cards/rng/meld/hand` + 44 个单测；牌库构成、洗牌多重集、句表正反例全绿 |
+| M2 胡牌分解 + 算胡 | ⏳ 进行中 | ✅ `rules.ts`（9 项开关 + 基线/宜昌/仅固定句/3 条经 四个预设，18 个单测）；⬜ `win.ts` / `listen.ts` / `score.ts` |
 | M3 游戏状态机 | ⬜ 未开始 | |
 | M4 AI 三档 | ⬜ 未开始 | |
 | M5 横屏牌桌 UI | ⬜ 未开始 | |
 | M6 打磨 | ⬜ 未开始 | |
 | M7 Capacitor 安卓 | ⬜ 未开始 | |
 | M8 CI 出包 | ⬜ 未开始 | |
+
+### 实测环境备忘
+
+- 本机 **无 JDK**，Android 本地构建不可用 → APK 走 CI（§8）。
+- `pnpm` 必须用 bundled 版本：`node C:\Users\shaolei\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\pnpm\bin\pnpm.mjs`（不在 PATH 上）。
+- 沙箱禁止写工作区外目录时，npm 缓存需重定向：`npm_config_cache=<repo>/.cache/npm`；pnpm store 用 `--store-dir <repo>/.cache/pnpm-store`。
+- **实测版本**：Node 24.14 / pnpm 11.7 / git 2.55 / React 19.3 / Vite 8.3 / Vitest 5.0 / ESLint 10.11 / **TypeScript 6.0.3**。
+  TS 之所以锁 6 而不是最新的 7：`typescript-eslint` 的 peer 范围是 `>=4.8.4 <6.1.0`，TS 7 会直接报
+  `typescript-eslint does not support TS 7.0`，lint 整条链就断了。
