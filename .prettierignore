@@ -1,0 +1,12 @@
+node_modules
+dist
+coverage
+.cache
+pnpm-lock.yaml
+
+# Chinese rules/plan documents are hand-formatted (tables, callouts);
+# let Prettier keep its hands off them.
+docs/
+
+# Capacitor native project is generated/managed by the Android toolchain.
+apps/web/android/

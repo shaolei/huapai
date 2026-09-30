@@ -1,0 +1,25 @@
+{
+  "name": "huapai",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "宜昌花牌（上大人）单机版 —— 纯 TypeScript 核心 + React/CSS UI + Capacitor 安卓",
+  "license": "UNLICENSED",
+  "scripts": {
+    "dev": "pnpm --filter @huapai/web dev",
+    "build": "pnpm --filter @huapai/web build",
+    "preview": "pnpm --filter @huapai/web preview",
+    "test": "pnpm -r test",
+    "test:coverage": "pnpm -r test:coverage",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "devDependencies": {
+    "eslint": "^10.11.0",
+    "prettier": "^3.9.9",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.71.0"
+  }
+}

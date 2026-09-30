@@ -1,0 +1,8 @@
+packages:
+  - 'packages/*'
+  - 'apps/*'
+
+# Windows 上 pnpm 默认的符号链接布局会踩到
+# `ERR_PNPM_SYMLINK_FAILED [symlinkAllModules] Maximum call stack size exceeded`，
+# 改用 hoisted（扁平 node_modules）布局。对 Vite/Vitest/React 无影响。
+nodeLinker: hoisted

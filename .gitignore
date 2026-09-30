@@ -1,0 +1,38 @@
+# dependencies
+node_modules/
+
+# build output
+dist/
+build/
+*.tsbuildinfo
+
+# local caches (redirected into the workspace so tooling works under a file sandbox)
+.cache/
+
+# test / coverage
+coverage/
+.vitest/
+
+# logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# editor / OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# android (Capacitor) — build output only; the native project itself IS committed
+apps/web/android/build/
+apps/web/android/.gradle/
+apps/web/android/app/build/
+apps/web/android/local.properties
+apps/web/android/.idea/
+apps/web/android/captures/
+
+# signing material — never commit
+*.keystore
+*.jks
