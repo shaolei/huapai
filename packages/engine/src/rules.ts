@@ -76,18 +76,26 @@ export interface RuleSet {
   // ── ④ 计分表（半胡） ──────────────────────────────────────
   readonly score: Readonly<Record<ScoreKey, number>>
 
-  // ── ⑤ 经字 ────────────────────────────────────────────────
-  /** 哪些字算经。5 条为乙三五七九（基线），3 条为三五七。 */
+  // ── ⑤ 精字 ────────────────────────────────────────────────
+  /** 哪些字算精。5 条为乙三五七九（基线），3 条为三五七。 */
   readonly jingChars: readonly TileChar[]
-  /** 素经胡数（半胡）。 */
+  /** 素精在句中的胡数（半胡）。 */
   readonly jingPlainHu: number
-  /** 花经胡数（半胡）。 */
+  /** 花精在句中的胡数（半胡）。 */
   readonly jingFlowerHu: number
+  /** 精的**同字单元**基础胡数（3 张素精 = 5 胡）。 */
+  readonly jingUnitBaseHu: number
+  /** 精单元每多一张花精增加的胡数。 */
+  readonly jingFlowerStepHu: number
+  /** 精单元每多一张牌的倍数：扎 = ×2、泛 = ×2×2。 */
+  readonly jingUnitSizeMultiplier: number
 
-  // ── ⑥ 主经 ────────────────────────────────────────────────
-  /** 主经；`null` 表示本期不定主经（叫经/闷经留待二期）。 */
+  // ── ⑥ 主精 ────────────────────────────────────────────────
+  /** 主精；`null` 表示本期不定主精。 */
   readonly mainJing: TileChar | null
   readonly mainJingMultiplier: number
+  /** 主精怎么定：每位玩家各自判定 / 全局判定一次 / 不启用。 */
+  readonly mainJingMode: 'per-player' | 'global' | 'none'
 
   // ── ⑦ 操作优先级 ──────────────────────────────────────────
   readonly priority: readonly ActionPriorityKey[]
@@ -145,9 +153,13 @@ export const BASELINE_RULES: RuleSet = {
   jingChars: ['乙', '三', '五', '七', '九'],
   jingPlainHu: toHalfHu(1),
   jingFlowerHu: toHalfHu(2),
+  jingUnitBaseHu: 5,
+  jingFlowerStepHu: 1,
+  jingUnitSizeMultiplier: 2,
 
   mainJing: '三',
   mainJingMultiplier: 2,
+  mainJingMode: 'per-player',
 
   priority: ['hu', 'shao', 'zhao', 'tong', 'dui'],
   allowPassThenHu: true,
