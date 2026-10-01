@@ -51,12 +51,13 @@ interface JingUsage {
 }
 
 /**
- * 给一个已确定的分解算胡。
+ * 给一组**单元**算胡。不要求恰好 8 个 —— AI 需要给「还没成型的手牌」估值，
+ * 所以这里接受任意长度的单元列表。
  *
  * @param mainJing 该玩家的主精（`null` = 不启用）；口径②是按人判定，所以由调用方传入。
  */
-export function scoreShape(
-  shape: ShapeDescriptor,
+export function scoreUnits(
+  units: readonly UnitDescriptor[],
   cards: readonly Card[],
   ruleSet: RuleSet,
   mainJing: TileChar | null,
@@ -74,7 +75,7 @@ export function scoreShape(
     }
   }
 
-  for (const unit of shape.units) {
+  for (const unit of units) {
     if (unit.kind === 'sentence') {
       const jings = unit.chars.filter((char) => ruleSet.jingChars.includes(char))
       if (jings.length === 0) {
@@ -132,6 +133,16 @@ export function scoreShape(
   }
 
   return { hu, halfHu: toHalfHu(hu), items }
+}
+
+/** 给一个已确定的完整分解算胡（8 单元 + 2 听头）。 */
+export function scoreShape(
+  shape: ShapeDescriptor,
+  cards: readonly Card[],
+  ruleSet: RuleSet,
+  mainJing: TileChar | null,
+): ScoreResult {
+  return scoreUnits(shape.units, cards, ruleSet, mainJing)
 }
 
 /**
