@@ -279,7 +279,7 @@ huapai/
 | 前置权限修复 | ✅ 完成 | `grant_dacl` verified；回滚命令见 §2 |
 | M0 环境与骨架 | ✅ 完成 | pnpm workspace + Vite/React/Vitest/ESLint；横屏三带占位版面；tag `v0.1.0` |
 | M1 牌库与数据结构 | ✅ 完成 | `cards/rng/meld/hand` + 44 个单测；牌库构成、洗牌多重集、句表正反例全绿 |
-| M2 胡牌分解 + 算胡 | ⏳ 进行中 | ✅ `rules.ts`（9 项开关 + 基线/宜昌/仅固定句/3 条经 四个预设，18 个单测）；⬜ `win.ts` / `listen.ts` / `score.ts` |
+| M2 胡牌分解 + 算胡 | ✅ 完成 | `rules`(9 项开关) + `win`(8 单元 + 2 听头分解) + `score`(精表/主精/听头) + `listen`；四项口径已定案；engine 119 个测试全绿 |
 | M3 游戏状态机 | ⬜ 未开始 | |
 | M4 AI 三档 | ⬜ 未开始 | |
 | M5 横屏牌桌 UI | ⬜ 未开始 | |
