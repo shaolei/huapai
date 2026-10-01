@@ -1,44 +1,76 @@
-import { ENGINE_VERSION } from '@huapai/engine'
+import { AI_DIFFICULTIES, type AiDifficulty } from '@huapai/engine'
+import { useEffect, useMemo, useState } from 'react'
 
-/**
- * M0 骨架：横屏三带版面的占位实现。
- *  - 顶部信息条 28
- *  - 主区（左 AI ｜ 弃牌/牌墙 ｜ 右 AI）128
- *  - 底部带（手牌列区 ｜ 明牌列区）182
- * M5 会把三个带换成真实牌桌。
- */
+import { TableScreen } from './components/TableScreen'
+import { GameStore, useGame } from './game/store'
+
+type Screen = 'home' | 'table'
+
+const DIFFICULTY_LABEL: Readonly<Record<AiDifficulty, string>> = {
+  easy: '轻松',
+  normal: '普通',
+  hard: '较难',
+}
+
 export function App() {
+  const [screen, setScreen] = useState<Screen>('home')
+  const [difficulty, setDifficulty] = useState<AiDifficulty>('normal')
+
+  // 换难度就换一个新的 store（等于重开一局）
+  const store = useMemo(() => new GameStore({ difficulty }), [difficulty])
+  useEffect(() => () => store.dispose(), [store])
+
+  const snap = useGame(store)
+
+  if (screen === 'table') {
+    return <TableScreen store={store} snap={snap} />
+  }
+
   return (
-    <div className="hz-app">
+    <div className="hz-app hz-app--home">
       <header className="hz-info-bar">
         <span className="hz-info-bar__title">宜昌花牌 · 上大人</span>
-        <span className="hz-info-bar__hint">M0 骨架就绪 · engine v{ENGINE_VERSION}</span>
+        <span className="hz-info-bar__hint">单机 · 1 人 + 2 AI · 横屏</span>
       </header>
 
-      <main className="hz-table">
-        <section className="hz-seat hz-seat--left">
-          <span className="hz-seat__name">上家（AI）</span>
-          <span className="hz-seat__count">25 张</span>
-        </section>
+      <main className="hz-home">
+        <h1 className="hz-home__title">宜昌花牌</h1>
+        <p className="hz-home__sub">
+          110 张 · 三人局 · 胡牌 = 8 个单元 + 2 张听头，且至少 17 胡
+        </p>
 
-        <section className="hz-center">
-          <span className="hz-center__label">牌墙 / 弃牌堆</span>
-        </section>
+        <div className="hz-home__group">
+          <span className="hz-home__label">AI 难度</span>
+          <div className="hz-home__buttons">
+            {AI_DIFFICULTIES.map((item) => (
+              <button
+                key={item}
+                type="button"
+                className={`hz-btn${item === difficulty ? ' is-primary' : ''}`}
+                onClick={() => setDifficulty(item)}
+              >
+                {DIFFICULTY_LABEL[item]}
+              </button>
+            ))}
+          </div>
+        </div>
 
-        <section className="hz-seat hz-seat--right">
-          <span className="hz-seat__name">下家（AI）</span>
-          <span className="hz-seat__count">25 张</span>
-        </section>
+        <button
+          type="button"
+          className="hz-btn is-primary hz-btn--big"
+          onClick={() => {
+            store.newGame()
+            store.start()
+            setScreen('table')
+          }}
+        >
+          开始游戏
+        </button>
+
+        <p className="hz-home__tip">
+          手牌按「单元」分列堆叠：一列就是一句/坎/扎/泛，列数 = 你离胡牌还差多远。
+        </p>
       </main>
-
-      <footer className="hz-hand-band">
-        <div className="hz-hand-band__hand">
-          <span className="hz-zone-label">你的手牌（M5：分列竖向堆叠）</span>
-        </div>
-        <div className="hz-hand-band__melds">
-          <span className="hz-zone-label">明牌（对 / 开招 / 踏船 / 开泛）</span>
-        </div>
-      </footer>
 
       <div className="hz-rotate-guard">
         <div className="hz-rotate-guard__box">

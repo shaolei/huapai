@@ -6,7 +6,6 @@
 :root {
   color-scheme: dark;
 
-  /* 安全区（横屏刘海在左右） */
   --hz-inset-top: env(safe-area-inset-top, 0px);
   --hz-inset-bottom: env(safe-area-inset-bottom, 0px);
   --hz-inset-left: env(safe-area-inset-left, 0px);
@@ -14,17 +13,13 @@
 
   /* 版面高度（计划书 §5.3：28 + 128 + 182 = 338，余 14 给安全区） */
   --hz-info-bar-h: 28px;
-  --hz-table-h: 128px;
   --hz-hand-band-h: 182px;
 
-  /* 牌面几何（计划书 §5.2） */
+  /* 牌面几何默认值；实际值由 layoutHand 通过行内 CSS 变量覆盖 */
   --hz-card-w: 30px;
   --hz-card-h: 92px;
-  --hz-card-band-h: 30px; /* 「字带」：叠压后仍可见的那一段 */
-  --hz-card-stack-step: 30px; /* 列内叠压步进 dy */
-  --hz-card-gap: 8px;
+  --hz-band: 30px;
 
-  /* 配色 */
   --hz-felt-0: #0d3b24;
   --hz-felt-1: #14532d;
   --hz-felt-2: #1c6b3a;
@@ -33,9 +28,9 @@
   --hz-text-dim: rgba(244, 247, 242, 0.62);
   --hz-card-face: #f6f1e4;
   --hz-card-edge: #cbbf9f;
-  --hz-ink: #26221b; /* 黑字 */
-  --hz-ink-red: #b3261e; /* 红字 */
-  --hz-flower: #c8912a; /* 花字标记 */
+  --hz-ink: #26221b;
+  --hz-ink-red: #b3261e;
+  --hz-flower: #c8912a;
   --hz-accent: #ffcf5c;
 
   --hz-radius: 6px;
@@ -55,7 +50,6 @@ body {
   background: var(--hz-felt-0);
   color: var(--hz-text);
   font-family: var(--hz-font);
-  /* 移动端：禁掉长按选择 / 双击缩放 / 下拉刷新 */
   -webkit-user-select: none;
   user-select: none;
   -webkit-touch-callout: none;
@@ -73,15 +67,24 @@ body {
    ============================================================ */
 
 .hz-app {
+  position: relative;
   display: grid;
   grid-template-rows: var(--hz-info-bar-h) 1fr var(--hz-hand-band-h);
   height: 100%;
   padding: var(--hz-inset-top) var(--hz-inset-right) var(--hz-inset-bottom)
     var(--hz-inset-left);
-  background: radial-gradient(120% 90% at 50% 0%, var(--hz-felt-2) 0%, var(--hz-felt-1) 55%, var(--hz-felt-0) 100%);
+  background: radial-gradient(
+    120% 90% at 50% 0%,
+    var(--hz-felt-2) 0%,
+    var(--hz-felt-1) 55%,
+    var(--hz-felt-0) 100%
+  );
 }
 
-/* --- 顶部信息条 --- */
+.hz-app--home {
+  grid-template-rows: var(--hz-info-bar-h) 1fr;
+}
+
 .hz-info-bar {
   display: flex;
   align-items: center;
@@ -95,15 +98,22 @@ body {
 
 .hz-info-bar__title {
   font-weight: 700;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .hz-info-bar__hint {
   color: var(--hz-text-dim);
   font-size: 11px;
+  white-space: nowrap;
 }
 
-/* --- 主区：左 AI ｜ 中央 ｜ 右 AI --- */
+/* ============================================================
+   主区：左 AI ｜ 中央 ｜ 右 AI
+   ============================================================ */
+
 .hz-table {
   display: grid;
   grid-template-columns: 104px 1fr 104px;
@@ -121,6 +131,18 @@ body {
   border-radius: var(--hz-radius);
   background: rgba(0, 0, 0, 0.16);
   font-size: 11px;
+  overflow: hidden;
+}
+
+.hz-seat.is-acting {
+  border-color: var(--hz-accent);
+  box-shadow: 0 0 0 1px rgba(255, 207, 92, 0.35) inset;
+}
+
+.hz-seat__head {
+  display: flex;
+  justify-content: space-between;
+  gap: 4px;
 }
 
 .hz-seat__name {
@@ -132,42 +154,384 @@ body {
   color: var(--hz-text-dim);
 }
 
-.hz-center {
+.hz-seat__melds {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px dashed var(--hz-line);
-  border-radius: var(--hz-radius);
-  color: var(--hz-text-dim);
-  font-size: 12px;
+  flex-wrap: wrap;
+  gap: 3px;
+  overflow: hidden;
 }
 
-/* --- 底部带：手牌列区 ｜ 明牌列区 --- */
+.hz-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px dashed var(--hz-line);
+  border-radius: var(--hz-radius);
+  padding: 4px;
+  min-height: 0;
+}
+
+.hz-center__wall {
+  font-size: 12px;
+  color: var(--hz-text-dim);
+}
+
+.hz-center__wall b {
+  color: var(--hz-accent);
+  font-size: 15px;
+}
+
+.hz-discards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  align-content: flex-start;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.hz-discard {
+  display: block;
+}
+
+/* ============================================================
+   底部带：手牌列区 ｜ 明牌列区
+   ============================================================ */
+
 .hz-hand-band {
   display: grid;
-  grid-template-columns: 1fr 148px;
+  grid-template-columns: 1fr 132px;
   gap: 6px;
   padding-top: 6px;
   border-top: 1px solid var(--hz-line);
   min-height: 0;
 }
 
-.hz-hand-band__hand,
-.hz-hand-band__melds {
+.hz-hand {
   display: flex;
   align-items: flex-end;
-  padding: 4px 6px;
-  border: 1px dashed var(--hz-line);
-  border-radius: var(--hz-radius);
+  justify-content: center;
+  min-height: 0;
+  min-width: 0;
+}
+
+.hz-hand__inner {
+  position: relative;
+}
+
+.hz-col {
+  position: absolute;
+  top: 0;
+}
+
+.hz-col__slot {
+  position: absolute;
+  left: 0;
 }
 
 .hz-hand-band__melds {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 3px;
+  padding: 4px;
+  border: 1px dashed var(--hz-line);
+  border-radius: var(--hz-radius);
   background: rgba(0, 0, 0, 0.16);
+  overflow: hidden;
 }
 
 .hz-zone-label {
+  width: 100%;
+  color: var(--hz-text-dim);
+  font-size: 10px;
+}
+
+/* ============================================================
+   牌面
+   ============================================================ */
+
+.hz-card {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  border: 1px solid var(--hz-card-edge);
+  border-radius: 3px;
+  background: linear-gradient(180deg, var(--hz-card-face) 0%, #ece4d2 100%);
+  color: var(--hz-ink);
+  overflow: hidden;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+
+.hz-card--red {
+  color: var(--hz-ink-red);
+}
+
+.hz-card--black {
+  color: var(--hz-ink);
+}
+
+/* 字带：叠压后仍然可见的那一段 */
+.hz-card__band {
+  position: relative;
+  height: var(--hz-band, 30px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.18);
+}
+
+.hz-card--red .hz-card__band {
+  background: linear-gradient(180deg, #fdeceb 0%, transparent 100%);
+}
+
+.hz-card.is-jing .hz-card__band {
+  box-shadow: inset 0 -2px 0 var(--hz-flower);
+}
+
+.hz-card__char {
+  font-size: calc(var(--hz-band, 30px) * 0.76);
+  line-height: 1;
+  font-weight: 700;
+}
+
+.hz-card__marks {
+  position: absolute;
+  top: 1px;
+  right: 2px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  font-style: normal;
+}
+
+.hz-mark {
+  font-size: calc(var(--hz-band, 30px) * 0.28);
+  line-height: 1;
+  font-style: normal;
+  font-weight: 700;
+}
+
+.hz-mark--flower {
+  color: var(--hz-flower);
+}
+
+.hz-mark--jing {
+  color: #2f7d4f;
+}
+
+.hz-card__body {
+  display: block;
+  height: 100%;
+  background-image: repeating-linear-gradient(
+    180deg,
+    rgba(0, 0, 0, 0.05) 0 2px,
+    transparent 2px 6px
+  );
+}
+
+.hz-card--down {
+  background: repeating-linear-gradient(
+    135deg,
+    #1d4d33 0 4px,
+    #17402a 4px 8px
+  );
+  border-color: #0f2e1e;
+}
+
+.hz-card.is-clickable {
+  cursor: pointer;
+}
+
+/* 抬牌：整张移出列外并放大，选中的牌一定是完整可读的 */
+.hz-card.is-selected {
+  transform: translateY(calc(var(--hz-band, 30px) * -0.55)) scale(1.12);
+  box-shadow:
+    0 0 0 2px var(--hz-accent),
+    0 6px 12px rgba(0, 0, 0, 0.45);
+  z-index: 20;
+}
+
+.hz-card.is-small {
+  --hz-band: 20px;
+  width: 18px;
+  height: 30px;
+  font-size: 10px;
+}
+
+.hz-card.is-small .hz-card__char {
+  font-size: 13px;
+}
+
+/* ============================================================
+   操作条（浮层，覆盖主区下缘）
+   ============================================================ */
+
+.hz-action-bar {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(var(--hz-hand-band-h) + var(--hz-inset-bottom) + 6px);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--hz-line);
+  background: rgba(6, 26, 17, 0.92);
+  backdrop-filter: blur(2px);
+  z-index: 30;
+}
+
+.hz-action-bar--quiet {
+  opacity: 0.85;
+}
+
+.hz-btn {
+  appearance: none;
+  border: 1px solid var(--hz-line);
+  border-radius: 999px;
+  padding: 6px 14px;
+  min-height: 32px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--hz-text);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.hz-btn.is-primary {
+  background: var(--hz-accent);
+  border-color: var(--hz-accent);
+  color: #24190a;
+}
+
+.hz-btn--big {
+  padding: 10px 34px;
+  font-size: 16px;
+}
+
+.hz-hint {
   color: var(--hz-text-dim);
   font-size: 11px;
+}
+
+.hz-hint--bar {
+  padding: 0 4px;
+}
+
+.hz-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 1px 4px;
+  border: 1px solid var(--hz-line);
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.3);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.hz-chip.is-open {
+  border-color: rgba(255, 207, 92, 0.5);
+}
+
+.hz-chip em {
+  font-style: normal;
+  color: var(--hz-accent);
+}
+
+.hz-chip i {
+  font-style: normal;
+  font-size: 9px;
+  color: var(--hz-text-dim);
+}
+
+/* ============================================================
+   首页
+   ============================================================ */
+
+.hz-home {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  text-align: center;
+  padding: 10px;
+  min-height: 0;
+}
+
+.hz-home__title {
+  margin: 0;
+  font-size: clamp(24px, 5vh, 40px);
+  letter-spacing: 0.16em;
+  color: var(--hz-accent);
+}
+
+.hz-home__sub,
+.hz-home__tip {
+  margin: 0;
+  color: var(--hz-text-dim);
+  font-size: 12px;
+}
+
+.hz-home__group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.hz-home__label {
+  color: var(--hz-text-dim);
+  font-size: 12px;
+}
+
+.hz-home__buttons {
+  display: flex;
+  gap: 8px;
+}
+
+/* ============================================================
+   结算浮层
+   ============================================================ */
+
+.hz-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(4, 18, 12, 0.86);
+  z-index: 60;
+}
+
+.hz-overlay__box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 22px 34px;
+  border: 1px solid var(--hz-line);
+  border-radius: 12px;
+  background: rgba(8, 32, 21, 0.96);
+  text-align: center;
+}
+
+.hz-overlay__box h2 {
+  margin: 0;
+  font-size: 22px;
+  color: var(--hz-accent);
+  letter-spacing: 0.1em;
+}
+
+.hz-overlay__box p {
+  margin: 0;
+  color: var(--hz-text-dim);
+  font-size: 13px;
 }
 
 /* ============================================================
