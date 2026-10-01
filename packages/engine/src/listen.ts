@@ -7,7 +7,7 @@
 
 import { type Card, type TileChar, TILE_CHARS } from './cards'
 import type { RuleSet } from './rules'
-import { evaluateHand } from './score'
+import { type EvaluateOptions, evaluateHand } from './score'
 
 export interface WinningTile {
   readonly char: TileChar
@@ -23,13 +23,12 @@ export interface WinningTile {
 export function winningTiles(
   cards: readonly Card[],
   ruleSet: RuleSet,
-  mainJing?: TileChar | null,
+  options: EvaluateOptions = {},
 ): WinningTile[] {
   const out: WinningTile[] = []
   for (const char of TILE_CHARS) {
     const probe: Card = { id: -1, char, variant: 'plain' }
-    const hand = [...cards, probe]
-    const evaluation = evaluateHand(hand, ruleSet, mainJing)
+    const evaluation = evaluateHand([...cards, probe], ruleSet, options)
     if (evaluation.isWin && evaluation.best) {
       out.push({ char, hu: evaluation.best.score.hu })
     }
@@ -41,7 +40,7 @@ export function winningTiles(
 export function winningChars(
   cards: readonly Card[],
   ruleSet: RuleSet,
-  mainJing?: TileChar | null,
+  options: EvaluateOptions = {},
 ): TileChar[] {
-  return winningTiles(cards, ruleSet, mainJing).map((tile) => tile.char)
+  return winningTiles(cards, ruleSet, options).map((tile) => tile.char)
 }

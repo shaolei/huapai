@@ -189,12 +189,36 @@ function searchUnits(
 export interface DecomposeOptions {
   /** 最多收集多少个解（算胡取最大用；防止极端局面搜爆）。 */
   readonly limit?: number
+  /**
+   * 已经固定成型、**不允许被拆开重组**的单元（对／招／扎／开泛 亮出来的副露）。
+   * 这些牌会先从计数里扣除，剩余牌只需再凑 `8 - fixedUnits.length` 个单元。
+   */
+  readonly fixedUnits?: readonly UnitDescriptor[]
 }
 
 const DEFAULT_LIMIT = 256
 
+/** 从计数里扣掉固定单元的用牌；扣不动（牌不够）返回 `null`。 */
+function subtractUnits(
+  counts: readonly number[],
+  fixedUnits: readonly UnitDescriptor[],
+): number[] | null {
+  const next = [...counts]
+  for (const unit of fixedUnits) {
+    for (const char of unit.chars) {
+      const i = tileIndex(char)
+      const left = (next[i] ?? 0) - 1
+      if (left < 0) return null
+      next[i] = left
+    }
+  }
+  return next
+}
+
 /**
  * 枚举一手牌的全部合法分解。返回空数组 = 结构上不成立（还差口或有多余牌）。
+ *
+ * `options.fixedUnits` 用于带副露的局面：已亮出的单元固定，不再参与重组。
  */
 export function decompose(
   cards: readonly Card[],
@@ -202,11 +226,18 @@ export function decompose(
   options: DecomposeOptions = {},
 ): ShapeDescriptor[] {
   const limit = options.limit ?? DEFAULT_LIMIT
-  const counts = countTiles(cards)
+  const fixedUnits = options.fixedUnits ?? []
+  const unitsLeft = UNITS_PER_HAND - fixedUnits.length
+  if (unitsLeft < 0) return []
+
+  const allCounts = countTiles(cards)
+  const counts = subtractUnits(allCounts, fixedUnits)
+  if (counts === null) return []
+
   const byChar = sentencesByChar(activeSentences(ruleSet))
   const results: ShapeDescriptor[] = []
 
-  for (const [a, b] of tingtouCandidates(cards, ruleSet)) {
+  for (const [a, b] of tingtouCandidatesExcluding(cards, fixedUnits, ruleSet)) {
     if (results.length >= limit) break
     const next = [...counts]
     const ia = tileIndex(a)
@@ -217,11 +248,11 @@ export function decompose(
     const failed = new Set<string>()
     searchUnits(
       next,
-      UNITS_PER_HAND,
+      unitsLeft,
       byChar,
       [],
       (units) => {
-        results.push({ units: [...units], tingtou: [a, b] })
+        results.push({ units: [...fixedUnits, ...units], tingtou: [a, b] })
         return results.length >= limit
       },
       failed,
@@ -231,30 +262,34 @@ export function decompose(
   return results
 }
 
-/** 只判结构是否成立，找到第一个解就停（比 `decompose` 快得多）。 */
-export function isWinningShape(cards: readonly Card[], ruleSet: RuleSet): boolean {
-  const counts = countTiles(cards)
-  const byChar = sentencesByChar(activeSentences(ruleSet))
-
-  for (const [a, b] of tingtouCandidates(cards, ruleSet)) {
-    const next = [...counts]
-    const ia = tileIndex(a)
-    const ib = tileIndex(b)
-    next[ia] = (next[ia] ?? 0) - 1
-    next[ib] = (next[ib] ?? 0) - 1
-
-    const failed = new Set<string>()
-    const found = searchUnits(
-      next,
-      UNITS_PER_HAND,
-      byChar,
-      [],
-      () => true,
-      failed,
-    )
-    if (found) return true
+/** 听头候选：只看**没被固定单元占用**的牌。 */
+function tingtouCandidatesExcluding(
+  cards: readonly Card[],
+  fixedUnits: readonly UnitDescriptor[],
+  ruleSet: RuleSet,
+): [TileChar, TileChar][] {
+  const counts = subtractUnits(countTiles(cards), fixedUnits) ?? []
+  const out: [TileChar, TileChar][] = []
+  for (let a = 0; a < CHAR_COUNT; a += 1) {
+    const charA = TILE_CHARS[a] as TileChar
+    if ((counts[a] ?? 0) === 0) continue
+    if ((counts[a] ?? 0) >= 2) out.push([charA, charA])
+    for (let b = a + 1; b < CHAR_COUNT; b += 1) {
+      if ((counts[b] ?? 0) === 0) continue
+      const charB = TILE_CHARS[b] as TileChar
+      if (isTingtou(charA, charB, ruleSet)) out.push([charA, charB])
+    }
   }
-  return false
+  return out
+}
+
+/** 只判结构是否成立，找到第一个解就停（比 `decompose` 快得多）。 */
+export function isWinningShape(
+  cards: readonly Card[],
+  ruleSet: RuleSet,
+  fixedUnits: readonly UnitDescriptor[] = [],
+): boolean {
+  return decompose(cards, ruleSet, { fixedUnits, limit: 1 }).length > 0
 }
 
 /** 手牌张数是否可能是合法胡牌（用于快速排除）。 */

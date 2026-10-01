@@ -112,6 +112,10 @@ export interface RuleSet {
   /** 黄庄是否罚庄家付「开醒钱」。 */
   readonly drawPenalty: boolean
 
+  // ── 「对」的限制 ──────────────────────────────────────────
+  /** 一局内最多「对」几对（S9：限 2 对；超出者若他人胡则承「包」）。 */
+  readonly maxDui: number
+
   // ── 结算 ──────────────────────────────────────────────────
   /** 自摸是否两家伙（另两家都付）。 */
   readonly selfDrawBothPay: boolean
@@ -168,6 +172,8 @@ export const BASELINE_RULES: RuleSet = {
 
   maxDealerRepeats: 3,
   drawPenalty: false,
+
+  maxDui: 2,
 
   selfDrawBothPay: true,
 }

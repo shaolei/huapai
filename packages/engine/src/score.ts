@@ -19,7 +19,7 @@
 import { type Card, type TileChar, isRedChar } from './cards'
 import { countFlowerOf } from './hand'
 import { SCORE_KEYS, type RuleSet, toHalfHu, toHu } from './rules'
-import { UNIT_LABEL, decompose, type ShapeDescriptor, type UnitKind } from './win'
+import { UNIT_LABEL, decompose, type ShapeDescriptor, type UnitDescriptor, type UnitKind } from './win'
 
 /** 单元种类 → 计分表键（句单独走精/红黑逻辑）。 */
 const UNIT_SCORE_KEY: Readonly<Record<Exclude<UnitKind, 'sentence'>, 'triplet' | 'zhao' | 'fan'>> =
@@ -162,21 +162,28 @@ export interface HandEvaluation {
   readonly mainJing: TileChar | null
 }
 
+export interface EvaluateOptions {
+  /** 指定主精；不传则按口径②自动判定。 */
+  readonly mainJing?: TileChar | null
+  /** 已固定成型的副露（对／招／扎／开泛），不参与重组。 */
+  readonly fixedUnits?: readonly UnitDescriptor[]
+}
+
 /**
  * 完整判定：结构（8 单元 + 2 听头）+ 门槛（≥ `ruleSet.minHu`）。
  *
- * @param mainJingOverride 指定主精；不传则按口径②自动判定。
+ * @param cards 该玩家的**全部**牌（暗牌 + 副露），因为花精要按整手牌来数。
  */
 export function evaluateHand(
   cards: readonly Card[],
   ruleSet: RuleSet,
-  mainJingOverride?: TileChar | null,
+  options: EvaluateOptions = {},
 ): HandEvaluation {
   const mainJing =
-    mainJingOverride === undefined ? determineMainJing(cards, ruleSet) : mainJingOverride
+    options.mainJing === undefined ? determineMainJing(cards, ruleSet) : options.mainJing
 
   let best: HandEvaluation['best'] = null
-  for (const shape of decompose(cards, ruleSet)) {
+  for (const shape of decompose(cards, ruleSet, { fixedUnits: options.fixedUnits })) {
     const score = scoreShape(shape, cards, ruleSet, mainJing)
     if (!best || score.halfHu > best.score.halfHu) {
       best = { shape, score }
