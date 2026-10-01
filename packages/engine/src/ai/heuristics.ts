@@ -168,6 +168,29 @@ export function dangerOf(state: GameState, self: number, card: Card): number {
   return danger * stage
 }
 
+/**
+ * 还要摸到多少种字才能真正推进手牌（越大 = 这手牌越"活"）。
+ *
+ * 这是补上「贪心只看眼前」的关键一步：牌墙只有 34 张、每人约 11 次换牌，
+ * 所以**保不保留进张**比当下多凑半个单元重要得多。
+ * 打掉一张孤张后进张数不会变；打掉一张"能连上别的牌"的字会让进张数掉下来。
+ *
+ * @param baseScore 当前手牌（打完之后）的 `handProgress.score`，用来判断"是否真的推进"
+ */
+export function improvementCount(
+  cards: readonly Card[],
+  ruleSet: RuleSet,
+  mainJing: TileChar | null,
+  baseScore: number,
+): number {
+  let count = 0
+  for (const char of TILE_CHARS) {
+    const probe: Card = { id: -1, char, variant: 'plain' }
+    if (handProgress([...cards, probe], ruleSet, mainJing).score > baseScore) count += 1
+  }
+  return count
+}
+
 /** 去掉某张牌之后的手牌（用于评估「打这张会怎样」）。 */
 export function withoutCard(cards: readonly Card[], cardId: number): Card[] {
   return cards.filter((card) => card.id !== cardId)

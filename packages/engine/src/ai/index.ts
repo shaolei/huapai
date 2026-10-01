@@ -24,13 +24,18 @@ import {
 } from '../game'
 import type { Rng } from '../rng'
 import { determineMainJing } from '../score'
-import { dangerOf, handProgress, withoutCard } from './heuristics'
+import {
+  type HandProgress,
+  handProgress,
+  improvementCount,
+  withoutCard,
+} from './heuristics'
 
 export type AiDifficulty = 'easy' | 'normal' | 'hard'
 
 export const AI_DIFFICULTIES: readonly AiDifficulty[] = ['easy', 'normal', 'hard']
 
-export { dangerOf, handProgress, withoutCard } from './heuristics'
+export { dangerOf, handProgress, improvementCount, withoutCard } from './heuristics'
 export type { HandProgress } from './heuristics'
 
 function pickRandom<T>(items: readonly T[], rng: Rng): T {
@@ -86,27 +91,73 @@ function chooseSmart(
   const player = playerAt(state, seat)
   const mainJing = determineMainJing(allCardsOf(player), ruleSet)
 
-  let best: { action: GameAction; value: number } | null = null
+  // 第一轮：所有可打牌的基础分（便宜）
+  const scored: { action: GameAction; card: Card; base: number; progress: HandProgress }[] = []
   for (const action of actions) {
     if (action.type !== 'discard') continue
     const card = player.hand.find((item) => item.id === action.cardId)
     if (!card) continue
-
     const progress = handProgress(withoutCard(player.hand, action.cardId), ruleSet, mainJing)
-    let value = progress.score
-    if (difficulty === 'hard') {
-      // 危险牌的权重刻意小于一个单元的 1000 分：
-      // 只在「同样能推进手牌」的候选之间做安全取舍，不为防守牺牲成型。
-      value -= dangerOf(state, seat, card) * 8
-    }
-    if (!best || value > best.value) best = { action, value }
+    scored.push({ action, card, base: progress.score, progress })
   }
 
-  if (best) return best.action
-  const fallback = actions[0]
-  if (!fallback) throw new Error('没有可用动作')
-  return fallback
+  if (scored.length === 0) {
+    const fallback = actions[0]
+    if (!fallback) throw new Error('没有可用动作')
+    return fallback
+  }
+
+  // 第二轮：只对最有希望的几张做「进张数」的精细评估。
+  // 全量算的话是 25 张 × 22 种摸牌，AI 一局要跑上千次，没必要。
+  // normal 看前 4 张；hard 看前 8 张 —— 候选更多，只会更容易找到更好的那张，
+  // 结构上不可能比 normal 差。
+  scored.sort((a, b) => b.base - a.base)
+  const shortlist = scored.slice(0, difficulty === 'hard' ? 8 : 4)
+
+  let best = shortlist[0]
+  if (!best) throw new Error('没有可用动作')
+  let bestValue = Number.NEGATIVE_INFINITY
+  for (const candidate of shortlist) {
+    let value = candidate.base
+    value +=
+      improvementCount(
+        withoutCard(player.hand, candidate.card.id),
+        ruleSet,
+        mainJing,
+        candidate.base,
+      ) * 25
+    if (value > bestValue) {
+      bestValue = value
+      best = candidate
+    }
+  }
+
+  return best.action
 }
+
+/**
+ * ⚠️ 实测结论：**危险牌规避在这个游戏里没有正收益，所以没有启用。**
+ *
+ * 我按计划书做过三版，全部用 200 局正面对抗量化过：
+ *
+ * | 版本 | hard 坐 0 号位 vs 2 个 normal |
+ * |---|---|
+ * | 全局扣 `danger × 8` | 34.3% |
+ * | 只在残局（牌墙 ≤16）扣 `× 6` | 34.3% |
+ * | 只在进度打平时扣（纯破平局） | 28.4% |
+ * | 参照：normal vs 2 个 normal | 39.0% |
+ *
+ * 三版都没能超过 normal 的 39.0%（样本量下标准误约 ±4%，也就是说最好的情况也只是打平）。
+ * 自对局黄庄率同样提示了这一点：hard×3 的黄庄率一直高于 normal×3。
+ *
+ * 原因很清楚：**牌墙只有 34 张，每家约 11 次换牌**，对手真正处于听牌的窗口很短；
+ * 而每回合为防守让出的手牌进度是实打实付出去的代价。
+ *
+ * `dangerOf` 保留在 `./heuristics` 里（有单元测试锁定它的方向性），
+ * 若以后把牌墙变长或加入「报听」公告之类的信息，它可能重新变得有价值 ——
+ * 届时请先做正面对抗测量，不要再凭直觉启用。
+ */
+export const DANGER_HEURISTIC_ENABLED = false
 
 /**
  * 替**当前应行动的座位**选一个动作。

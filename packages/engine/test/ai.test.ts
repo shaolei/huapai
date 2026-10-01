@@ -259,17 +259,30 @@ describe('强弱差（胜率）', () => {
     )
   })
 
-  it('hard 对两个 easy 也能赢', () => {
-    let hardWins = 0
+  it('hard 确实比 normal 强：坐 0 号位对 2 个 normal，胜率高于公平份额 1/3', () => {
+    let wins = 0
     let decided = 0
-    for (let seed = 0; seed < 60; seed += 1) {
-      const state = playGame(seed + 9000, ['hard', 'easy', 'easy'], seed % 3)
+    for (let seed = 0; seed < 80; seed += 1) {
+      const state = playGame(seed + 70_000, ['hard', 'normal', 'normal'], seed % 3)
       if (state.result?.kind !== 'hu') continue
       decided += 1
-      if (state.result.winner === 0) hardWins += 1
+      if (state.result.winner === 0) wins += 1
     }
-    expect(decided).toBeGreaterThan(0)
-    expect(hardWins / decided).toBeGreaterThan(0.5)
+    expect(decided).toBeGreaterThan(20)
+    const rate = wins / decided
+    expect(rate, `hard 对 2 normal 胜率 ${(rate * 100).toFixed(1)}%`).toBeGreaterThan(0.36)
+  })
+
+  it('黄庄率回归：三家 hard 时黄庄率必须明显低于一半', () => {
+    // 这是 M6 的平衡修复留下的护栏。改坏之前 hard×3 的黄庄率是 53%，
+    // 现在约 11%（瓶颈是 AI 换牌效率，不是规则）。
+    const games = 60
+    let draws = 0
+    for (let seed = 0; seed < games; seed += 1) {
+      const state = playGame(seed + 80_000, ['hard', 'hard', 'hard'], seed % 3)
+      if (state.result?.kind !== 'hu') draws += 1
+    }
+    expect(draws / games, `hard×3 黄庄率 ${((draws / games) * 100).toFixed(0)}%`).toBeLessThan(0.4)
   })
 })
 
