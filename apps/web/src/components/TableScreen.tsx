@@ -1,10 +1,13 @@
 import {
   type Card,
+  type ColumnKind,
   type GameAction,
   type MeldGroup,
   type PlayerState,
   type RuleSet,
   actingSeat,
+  allCardsOf,
+  determineMainJing,
   playerAt,
 } from '@huapai/engine'
 import { type PointerEvent as ReactPointerEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -45,6 +48,17 @@ const VIA_LABEL: Readonly<Record<MeldGroup['via'], string>> = {
   zhao: '招',
   zha: '扎',
   fan: '泛',
+}
+/** 牌墙满值（3 人局 110 张：25+25+26 发完剩 34）。用于画进度条。 */
+const WALL_FULL = 34
+
+/** 这一列是什么 —— 标在列底那张完整可见的牌上。 */
+function columnBadge(kind: ColumnKind, count: number): string {
+  if (kind === 'same') return count >= 5 ? '泛' : count === 4 ? '扎' : '坎'
+  if (kind === 'sentence') return '句'
+  if (kind === 'kou') return '口'
+  if (kind === 'pair') return '对'
+  return '散'
 }
 
 function MeldChip({ meld, ruleSet }: { meld: MeldGroup; ruleSet: RuleSet }) {
@@ -235,6 +249,12 @@ export function TableScreen({ store, snap }: { store: GameStore; snap: StoreSnap
 
   const recentDiscards = state.discards.slice(-16)
 
+  // 口径②：主精按人判定 —— 手上该精张数最多者，会随摸打变化，所以每帧重算。
+  const mainJing = useMemo(
+    () => determineMainJing(allCardsOf(human), ruleSet),
+    [human, ruleSet],
+  )
+
   const phaseHint =
     state.phase === 'finished'
       ? '本局结束'
@@ -253,7 +273,7 @@ export function TableScreen({ store, snap }: { store: GameStore; snap: StoreSnap
           {acting === HUMAN_SEAT && state.phase === 'claim' ? ' · 请选择是否响应' : ''}
         </span>
         <span className="hz-info-bar__hint">
-          {human.hand.length} 张 · 牌墙 {state.wall.length} · 主精（自动判定）
+          {human.hand.length} 张 · 主精 <b className="hz-jing">{mainJing ?? '—'}</b>
           {layout.scrolls ? ' · 手牌可横向滑动' : ''}
         </span>
       </header>
@@ -267,15 +287,26 @@ export function TableScreen({ store, snap }: { store: GameStore; snap: StoreSnap
         />
 
         <section className="hz-center">
-          <div className="hz-center__wall">
-            牌墙 <b>{state.wall.length}</b>
+          <div className="hz-wall">
+            <span className="hz-wall__label">牌墙</span>
+            <span className="hz-wall__track">
+              <span
+                className={`hz-wall__fill${state.wall.length <= 8 ? ' is-low' : ''}`}
+                style={{ width: `${Math.min(100, (state.wall.length / WALL_FULL) * 100)}%` }}
+              />
+            </span>
+            <span className="hz-wall__num">{state.wall.length}</span>
           </div>
           <div className="hz-discards">
             {recentDiscards.length === 0 ? (
               <span className="hz-hint">还没有人打牌</span>
             ) : (
               recentDiscards.map((record, index) => (
-                <span key={`${record.card.id}-${index}`} className="hz-discard" title={`${record.seat} 号位打出`}>
+                <span
+                  key={`${record.card.id}-${index}`}
+                  className="hz-discard"
+                  title={`${SEAT_LABEL[record.seat] ?? '你'}打出`}
+                >
                   <CardFace card={record.card} ruleSet={ruleSet} small />
                 </span>
               ))
@@ -337,6 +368,11 @@ export function TableScreen({ store, snap }: { store: GameStore; snap: StoreSnap
                       card={card}
                       ruleSet={ruleSet}
                       selected={snap.selectedCardId === card.id}
+                      badge={
+                        index === column.cards.length - 1
+                          ? columnBadge(column.kind, column.cards.length)
+                          : undefined
+                      }
                     />
                   </div>
                 ))}

@@ -2,7 +2,7 @@ import type { Column } from '@huapai/engine'
 import { arrangeConcealed, createDeck, mulberry32, shuffle } from '@huapai/engine'
 import { describe, expect, it } from 'vitest'
 
-import { CARD_H, CARD_W, COLUMN_GAP, STACK_STEP, layoutHand } from './layoutHand'
+import { CARD_H, CARD_W, COLUMN_GAP, MAX_SCALE_UP, STACK_STEP, layoutHand } from './layoutHand'
 
 const deck = createDeck()
 
@@ -27,9 +27,7 @@ describe('layoutHand 基本行为', () => {
     expect(layout.scrolls).toBe(false)
   })
 
-  it('单列 3 张的列高 = 牌高 + 2 × 步进', () => {
-    const columns = columnsFrom(1, 3).filter(() => true)
-    // 造一个确定的三张同字列
+  it('单列 3 张的列高 = (牌高 + 2 × 步进) × 缩放', () => {
     const one: Column[] = [
       {
         key: 'a',
@@ -37,12 +35,14 @@ describe('layoutHand 基本行为', () => {
         cards: [deck[0], deck[1], deck[2]].filter(Boolean) as Column['cards'],
       },
     ]
-    expect(columns.length).toBeGreaterThan(0)
     const layout = layoutHand({ columns: one, availableWidth: 630, availableHeight: 182 })
     expect(layout.placed).toHaveLength(1)
-    expect(layout.placed[0]?.offsets).toEqual([0, STACK_STEP, STACK_STEP * 2])
-    expect(layout.totalHeight).toBe(CARD_H + STACK_STEP * 2)
-    expect(layout.scale).toBe(1)
+    expect(layout.placed[0]?.offsets).toEqual([
+      0,
+      STACK_STEP * layout.scale,
+      STACK_STEP * 2 * layout.scale,
+    ])
+    expect(layout.totalHeight).toBeCloseTo((CARD_H + STACK_STEP * 2) * layout.scale, 5)
     expect(layout.scrolls).toBe(false)
   })
 
@@ -74,7 +74,10 @@ describe('layoutHand 基本行为', () => {
     if (layout.placed.length > 1) {
       const first = layout.placed[0]
       const second = layout.placed[1]
-      expect((second?.x ?? 0) - (first?.x ?? 0)).toBeCloseTo(CARD_W + COLUMN_GAP, 5)
+      expect((second?.x ?? 0) - (first?.x ?? 0)).toBeCloseTo(
+        (CARD_W + COLUMN_GAP) * layout.scale,
+        5,
+      )
     }
   })
 })
@@ -123,7 +126,7 @@ describe('硬保证：不溢出、不丢牌', () => {
       expect(layout.cardHeight).toBeGreaterThan(0)
       expect(layout.stackStep).toBeGreaterThan(0)
       expect(layout.scale).toBeGreaterThan(0)
-      expect(layout.scale).toBeLessThanOrEqual(1)
+      expect(layout.scale).toBeLessThanOrEqual(MAX_SCALE_UP)
     }
   })
 })
@@ -159,17 +162,40 @@ describe('打包行为', () => {
     if (!layout.scrolls) {
       expect(layout.totalWidth).toBeLessThanOrEqual(420.5)
     }
-    expect(layout.cardWidth).toBeLessThanOrEqual(CARD_W)
+    expect(layout.cardWidth).toBeLessThanOrEqual(CARD_W * MAX_SCALE_UP)
   })
 
-  it('宽度充裕时不缩放、不打包', () => {
+  it('空间充裕时把牌放大，而不是留一大片空白', () => {
     const layout = layoutHand({
       columns: columnsFrom(4, 26),
       availableWidth: 2000,
       availableHeight: 400,
     })
-    expect(layout.scale).toBe(1)
     expect(layout.scrolls).toBe(false)
+    // 空间足够 → 会放大，但封顶
+    expect(layout.scale).toBeGreaterThan(1)
+    expect(layout.scale).toBeLessThanOrEqual(MAX_SCALE_UP)
     expect(layout.placed.every((column) => !column.packed)).toBe(true)
+  })
+
+  it('放大后依然不溢出（宽高两个方向都要守住）', () => {
+    for (let seed = 0; seed < 40; seed += 1) {
+      for (const count of [3, 8, 18, 25]) {
+        for (const [width, height] of [
+          [736, 182],
+          [630, 182],
+          [900, 200],
+        ] as const) {
+          const layout = layoutHand({
+            columns: columnsFrom(seed + 300, count),
+            availableWidth: width,
+            availableHeight: height,
+          })
+          if (layout.scrolls) continue
+          expect(layout.totalWidth, `seed=${seed} n=${count}`).toBeLessThanOrEqual(width + 0.5)
+          expect(layout.totalHeight, `seed=${seed} n=${count}`).toBeLessThanOrEqual(height + 0.5)
+        }
+      }
+    }
   })
 })

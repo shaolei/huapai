@@ -7,6 +7,12 @@ export interface CardFaceProps {
   readonly selected?: boolean
   readonly onClick?: () => void
   readonly small?: boolean
+  /**
+   * 画在牌面下半部分的徽章。手牌列里只给**最后一张（完整可见的那张）**传，
+   * 用来标出这列是什么（句/坎/扎/泛/口/对/散）——
+   * 否则每列下方那块面积只是空装饰纹，白占地方。
+   */
+  readonly badge?: string
 }
 
 /**
@@ -15,7 +21,7 @@ export interface CardFaceProps {
  * 关键约定：**字画在顶部的「字带」里**。手牌列内叠压时，每张牌只露出顶部这一带，
  * 字带就是"还能认出这是什么牌"的全部依据 —— 所以字带里同时放字、红/黑、花/精标记。
  */
-export function CardFace({ card, ruleSet, selected, onClick, small }: CardFaceProps) {
+export function CardFace({ card, ruleSet, selected, onClick, small, badge }: CardFaceProps) {
   if (!card) {
     return <div className="hz-card hz-card--down" aria-hidden="true" />
   }
@@ -54,7 +60,9 @@ export function CardFace({ card, ruleSet, selected, onClick, small }: CardFacePr
           {jing ? <i className="hz-mark hz-mark--jing">精</i> : null}
         </span>
       </span>
-      <span className="hz-card__body" aria-hidden="true" />
+      <span className="hz-card__body" aria-hidden="true">
+        {badge ? <span className="hz-card__badge">{badge}</span> : null}
+      </span>
     </div>
   )
 }

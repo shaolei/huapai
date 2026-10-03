@@ -12,13 +12,45 @@ const DIFFICULTY_LABEL: Readonly<Record<AiDifficulty, string>> = {
   hard: '较难',
 }
 
+/**
+ * 从 URL 读初始参数，让**某一局可以被完全复现**（也方便无头浏览器直接截到牌桌）：
+ *   ?seed=42          指定牌局 seed（同 seed 同一副牌）
+ *   ?start=1          跳过首页直接开局
+ *   ?difficulty=hard  指定 AI 难度
+ */
+function readUrlOptions(): { seed: number | undefined; autoStart: boolean; difficulty: AiDifficulty } {
+  if (typeof window === 'undefined') {
+    return { seed: undefined, autoStart: false, difficulty: 'normal' }
+  }
+  const params = new URLSearchParams(window.location.search)
+  const rawSeed = Number(params.get('seed'))
+  const difficulty = params.get('difficulty')
+  return {
+    seed: Number.isFinite(rawSeed) && rawSeed > 0 ? Math.floor(rawSeed) : undefined,
+    autoStart: params.get('start') === '1',
+    difficulty:
+      difficulty === 'easy' || difficulty === 'normal' || difficulty === 'hard'
+        ? difficulty
+        : 'normal',
+  }
+}
+
 export function App() {
-  const [screen, setScreen] = useState<Screen>('home')
-  const [difficulty, setDifficulty] = useState<AiDifficulty>('normal')
+  const [options] = useState(readUrlOptions)
+  const [screen, setScreen] = useState<Screen>(options.autoStart ? 'table' : 'home')
+  const [difficulty, setDifficulty] = useState<AiDifficulty>(options.difficulty)
 
   // 换难度就换一个新的 store（等于重开一局）
-  const store = useMemo(() => new GameStore({ difficulty }), [difficulty])
+  const store = useMemo(
+    () => new GameStore({ difficulty, seed: options.seed }),
+    [difficulty, options.seed],
+  )
   useEffect(() => () => store.dispose(), [store])
+
+  // 带 ?start=1 时直接开局
+  useEffect(() => {
+    if (options.autoStart) store.start()
+  }, [store, options.autoStart])
 
   const snap = useGame(store)
 

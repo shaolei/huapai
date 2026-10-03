@@ -30,6 +30,11 @@ export const MIN_STACK_STEP = 22
 export const COLUMN_GAP = 8
 /** 牌面最小缩放比，低于它宁可变滚动也不把牌压成看不懂。 */
 export const MIN_SCALE = 0.6
+/**
+ * 牌面最大放大比。手牌列数少时，与其留一大片空白，不如把牌放大。
+ * 上限保持在 1.5：再大就会显得笨重，也不像"一手牌"了。
+ */
+export const MAX_SCALE_UP = 1.5
 
 export interface LayoutInput {
   readonly columns: readonly Column[]
@@ -177,6 +182,8 @@ export function layoutHand(input: LayoutInput): HandLayout {
     readonly cardWidth: number
     readonly cardHeight: number
     readonly step: number
+    readonly width: number
+    readonly height: number
     readonly ok: boolean
   }
 
@@ -192,6 +199,8 @@ export function layoutHand(input: LayoutInput): HandLayout {
       cardWidth: scaledWidth,
       cardHeight: scaledHeight,
       step: scaledStep,
+      width,
+      height,
       ok: width <= availableWidth + 0.5 && height <= availableHeight + 0.5,
     }
   }
@@ -207,23 +216,43 @@ export function layoutHand(input: LayoutInput): HandLayout {
   }
 
   const scrolls = !chosen.ok
+
+  // 装得下就再**向上**缩放，把多余的空间还给可读性：
+  // 手牌列数少的时候，硬留 30px 的牌只会得到两侧一大片空白。
+  // 宽高同时约束（缩放是等比的，所以两个上限都要看），且不超过 MAX_SCALE_UP。
+  let finalCardWidth = chosen.cardWidth
+  let finalCardHeight = chosen.cardHeight
+  let finalStep = chosen.step
+  if (!scrolls && chosen.width > 0 && chosen.height > 0) {
+    const grow = Math.min(
+      availableWidth / chosen.width,
+      availableHeight / chosen.height,
+      MAX_SCALE_UP,
+    )
+    if (grow > 1) {
+      finalCardWidth = chosen.cardWidth * grow
+      finalCardHeight = chosen.cardHeight * grow
+      finalStep = chosen.step * grow
+    }
+  }
+
+  const gapScaled = gap * (finalCardWidth / baseCardWidth)
   const placed: PlacedColumn[] = []
   let x = 0
   for (const column of chosen.working) {
-    const offsets = Array.from({ length: column.cards.length }, (_, index) => index * chosen.step)
+    const offsets = Array.from({ length: column.cards.length }, (_, index) => index * finalStep)
     placed.push({
       key: column.key,
       kind: column.kind,
       cards: column.cards,
       offsets,
       x,
-      height: columnHeightOf(column.cards.length, chosen.cardHeight, chosen.step),
+      height: columnHeightOf(column.cards.length, finalCardHeight, finalStep),
       packed: column.packed,
     })
-    x += chosen.cardWidth + gap * (chosen.cardWidth / baseCardWidth)
+    x += finalCardWidth + gapScaled
   }
 
-  const gapScaled = gap * (chosen.cardWidth / baseCardWidth)
   const totalWidth = placed.length === 0 ? 0 : x - gapScaled
   const totalHeight = placed.reduce((max, column) => Math.max(max, column.height), 0)
 
@@ -231,10 +260,10 @@ export function layoutHand(input: LayoutInput): HandLayout {
     placed,
     totalWidth,
     totalHeight,
-    cardWidth: chosen.cardWidth,
-    cardHeight: chosen.cardHeight,
-    stackStep: chosen.step,
-    scale: chosen.cardWidth / baseCardWidth,
+    cardWidth: finalCardWidth,
+    cardHeight: finalCardHeight,
+    stackStep: finalStep,
+    scale: finalCardWidth / baseCardWidth,
     scrolls,
   }
 }

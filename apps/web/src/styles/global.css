@@ -164,32 +164,62 @@ body {
 .hz-center {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
+  align-items: stretch;
+  justify-content: flex-start;
   gap: 6px;
   border: 1px dashed var(--hz-line);
   border-radius: var(--hz-radius);
-  padding: 4px;
+  padding: 6px 8px;
   min-height: 0;
 }
 
-.hz-center__wall {
-  font-size: 12px;
+/* 牌墙进度条：比一个孤零零的数字更能说明"还剩多少局可打" */
+.hz-wall {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  font-size: 11px;
   color: var(--hz-text-dim);
 }
 
-.hz-center__wall b {
+.hz-wall__track {
+  flex: 1 1 auto;
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+}
+
+.hz-wall__fill {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: linear-gradient(90deg, #4f9f6a, var(--hz-accent));
+  transition: width 0.2s ease-out;
+}
+
+.hz-wall__fill.is-low {
+  background: linear-gradient(90deg, #b3541e, #e0872f);
+}
+
+.hz-wall__num {
+  min-width: 20px;
+  text-align: right;
   color: var(--hz-accent);
-  font-size: 15px;
+  font-weight: 700;
+  font-size: 13px;
 }
 
 .hz-discards {
+  flex: 1 1 auto;
   display: flex;
   flex-wrap: wrap;
   gap: 3px;
   align-content: flex-start;
   justify-content: center;
   overflow: hidden;
+  min-height: 0;
 }
 
 .hz-discard {
@@ -202,7 +232,8 @@ body {
 
 .hz-hand-band {
   display: grid;
-  grid-template-columns: 1fr 132px;
+  /* 明牌区按内容自适应：固定 132px 时它绝大多数时候是空的 */
+  grid-template-columns: 1fr auto;
   gap: 6px;
   padding-top: 6px;
   border-top: 1px solid var(--hz-line);
@@ -215,6 +246,13 @@ body {
   justify-content: center;
   min-height: 0;
   min-width: 0;
+  /* 底边留一点余量：否则最下面那张牌会贴在屏幕下沿 */
+  padding-bottom: 6px;
+}
+
+.hz-jing {
+  color: var(--hz-accent);
+  font-size: 13px;
 }
 
 .hz-hand__inner {
@@ -241,6 +279,8 @@ body {
   border-radius: var(--hz-radius);
   background: rgba(0, 0, 0, 0.16);
   overflow: hidden;
+  min-width: 84px;
+  max-width: 150px;
 }
 
 .hz-zone-label {
@@ -255,6 +295,8 @@ body {
 
 .hz-card {
   position: relative;
+  display: flex;
+  flex-direction: column;
   width: 100%;
   height: 100%;
   border: 1px solid var(--hz-card-edge);
@@ -323,13 +365,26 @@ body {
 }
 
 .hz-card__body {
-  display: block;
-  height: 100%;
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: center;
+  /* 注意不能用 height: 100% —— 上面那条字带已经占掉 var(--hz-band)，
+     再用 100% 会溢出，把徽章挤到牌的最底边（看着像被裁掉）。 */
+  min-height: 0;
   background-image: repeating-linear-gradient(
     180deg,
     rgba(0, 0, 0, 0.05) 0 2px,
     transparent 2px 6px
   );
+}
+
+/* 列类型徽章：标在列底那张完整可见的牌上 */
+.hz-card__badge {
+  font-size: calc(var(--hz-band, 30px) * 0.42);
+  font-weight: 700;
+  color: rgba(0, 0, 0, 0.42);
+  letter-spacing: 0.1em;
 }
 
 .hz-card--down {
