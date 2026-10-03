@@ -122,7 +122,12 @@ jobs:
 
       - name: Assemble debug APK
         working-directory: apps/web/android
-        run: ./gradlew assembleDebug --no-daemon --stacktrace
+        run: |
+          # Windows 上 git 不记录可执行位，gradlew 由 Capacitor 在 Windows 生成时
+          # exec 位会丢（CI 报 Permission denied / exit 126）。索引里已修正，
+          # 这里再兜一道，防止以后在 Windows 上重新 cap add 时复现。
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon --stacktrace
 
       - name: Collect APK
         run: |
