@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">宜昌花牌</string>
+    <string name="title_activity_main">宜昌花牌</string>
+    <string name="package_name">com.huapai.yichang</string>
+    <string name="custom_url_scheme">com.huapai.yichang</string>
+</resources>

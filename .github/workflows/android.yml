@@ -1,0 +1,143 @@
+name: Android APK
+
+# 触发策略（有意做窄）：
+#   - 打 tag（v*）   -> 跑测试 + 构建 + 发 GitHub Release
+#   - PR / main 推送 -> 只跑测试，不出包
+#   - 手动            -> 可手动出包
+# 说明：仓库是**公开**的，公开仓库用标准 GitHub-hosted runner 分钟数不限。
+#       APK 发到 Release（不占 Actions 那 500MB 的 artifact 共享配额）。
+on:
+  push:
+    tags: ['v*']
+    branches: ['main']
+  pull_request:
+    branches: ['main']
+  workflow_dispatch:
+
+# 发 Release 需要写权限；其余只读
+permissions:
+  contents: write
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '22' # Capacitor 8 要求 Node >= 22
+  PNPM_VERSION: '11'
+  JAVA_VERSION: '21' # AGP 8.x 要求 >= 17；21 是当前稳妥选择
+  ANDROID_COMPILE_SDK: '36'
+
+jobs:
+  # ── 1) 静态检查与测试：任何触发都跑 ────────────────────────────
+  verify:
+    name: Lint / Typecheck / Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Test
+        run: pnpm test
+
+  # ── 2) 出 APK：仅 tag 或手动 ───────────────────────────────────
+  apk:
+    name: Build debug APK
+    needs: verify
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      # Ubuntu runner 自带 Android SDK，这一步保证它在 PATH 上并接受许可
+      - uses: android-actions/setup-android@v3
+
+      # 补齐 app 需要的 compileSdk（runner 镜像里不一定有 36）
+      - name: Install Android SDK packages
+        run: sdkmanager "platform-tools" "platforms;android-${{ env.ANDROID_COMPILE_SDK }}" "build-tools;${{ env.ANDROID_COMPILE_SDK }}.0.0"
+
+      # Gradle 缓存很关键：冷启动要下载 Gradle 发行包与全部依赖
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('apps/web/android/**/*.gradle', 'apps/web/android/gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: gradle-${{ runner.os }}-
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Build web assets
+        run: pnpm build
+
+      - name: Sync Capacitor
+        run: pnpm --filter @huapai/web exec cap sync android
+
+      - name: Assemble debug APK
+        working-directory: apps/web/android
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Collect APK
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          cp apps/web/android/app/build/outputs/apk/debug/app-debug.apk \
+             "out/huapai-${GITHUB_REF_NAME}.apk"
+          ls -lh out/
+
+      # artifact 只做「构建产物留档」，保留期刻意设短，避免占满 500MB 共享配额
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: huapai-apk-${{ github.ref_name }}
+          path: out/*.apk
+          retention-days: 14
+
+      # 正式交付走 Release：Release 附件不占 Actions 的 artifact 配额，且长期可下载
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: out/*.apk
+          generate_release_notes: true
+          body: |
+            宜昌花牌（上大人）单机版 · ${{ github.ref_name }}
+
+            安装：下载下面的 `.apk`，在安卓手机上允许「安装未知来源应用」后安装。
+            （这是 **debug 签名** 的包，仅供自用测试，不能上架应用商店。）
+
+            - 横屏游戏，请横向握持
+            - 1 人 + 2 AI，离线单机

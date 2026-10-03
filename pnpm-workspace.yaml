@@ -2,7 +2,12 @@ packages:
   - 'packages/*'
   - 'apps/*'
 
+allowBuilds:
+  sharp: set this to true or false
+
 # Windows 上 pnpm 默认的符号链接布局会踩到
-# `ERR_PNPM_SYMLINK_FAILED [symlinkAllModules] Maximum call stack size exceeded`，
+# ERR_PNPM_SYMLINK_FAILED [symlinkAllModules] Maximum call stack size exceeded，
 # 改用 hoisted（扁平 node_modules）布局。对 Vite/Vitest/React 无影响。
+# 注意：不要引入 @capacitor/assets —— 它是 Capacitor 5 时代的工具，
+# 会拖进 sharp（libvips 需从 GitHub Releases 下载，无代理会超时）。
 nodeLinker: hoisted
