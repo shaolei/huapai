@@ -450,6 +450,48 @@ body {
   color: var(--hz-text-dim);
 }
 
+.hz-btn--mini {
+  padding: 1px 8px;
+  min-height: 20px;
+  font-size: 10px;
+  font-weight: 400;
+}
+
+.hz-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* ============================================================
+   拖拽理牌
+   ============================================================ */
+
+/* 拖拽时跟随指针的「手里那张牌」 */
+.hz-drag-ghost {
+  position: fixed;
+  width: 34px;
+  height: 104px;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  z-index: 80;
+  opacity: 0.92;
+  --hz-card-w: 34px;
+  --hz-card-h: 104px;
+  --hz-band: 30px;
+}
+
+/* 被拖起来的那张原位半透明 */
+.hz-col__slot.is-dragging {
+  opacity: 0.3;
+}
+
+/* 落点高亮 */
+.hz-col__slot.is-drop-target .hz-card {
+  box-shadow:
+    0 0 0 2px var(--hz-accent),
+    0 0 10px rgba(255, 207, 92, 0.5);
+}
+
 /* ============================================================
    首页
    ============================================================ */

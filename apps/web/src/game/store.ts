@@ -11,6 +11,7 @@
 
 import {
   type AiDifficulty,
+  type Column,
   type GameAction,
   type GameState,
   actingSeat,
@@ -21,6 +22,15 @@ import {
   reduce,
 } from '@huapai/engine'
 import { useSyncExternalStore } from 'react'
+
+import {
+  type Arrangement,
+  buildColumns,
+  hasManualGroups,
+  mergeCards,
+  pruneArrangement,
+  ungroupCard,
+} from './arrangement'
 
 /** 人类玩家永远坐 0 号位（底部）。 */
 export const HUMAN_SEAT = 0
@@ -37,6 +47,10 @@ export interface StoreSnapshot {
   readonly selectedCardId: number | null
   readonly difficulty: AiDifficulty
   readonly seed: number
+  /** 已经合成好的手牌列（人工组 + 自动编排），UI 直接渲染。 */
+  readonly columns: readonly Column[]
+  /** 玩家是否手工理过牌（决定「自动理牌」按钮要不要点亮）。 */
+  readonly hasManualArrangement: boolean
 }
 
 export interface StoreOptions {
@@ -49,6 +63,8 @@ export interface StoreOptions {
 export class GameStore {
   private state: GameState
   private selectedCardId: number | null = null
+  /** 玩家手工分的组（牌 id）。空 = 全自动编排。 */
+  private arrangement: Arrangement = []
   private snapshot: StoreSnapshot
   private timer: ReturnType<typeof setTimeout> | null = null
   private readonly listeners = new Set<() => void>()
@@ -76,6 +92,7 @@ export class GameStore {
   private buildSnapshot(): StoreSnapshot {
     const acting = actingSeat(this.state)
     const isHumanTurn = this.state.phase !== 'finished' && acting === HUMAN_SEAT
+    const hand = this.state.players[HUMAN_SEAT]?.hand ?? []
     return {
       state: this.state,
       humanSeat: HUMAN_SEAT,
@@ -84,7 +101,15 @@ export class GameStore {
       selectedCardId: this.selectedCardId,
       difficulty: this.difficulty,
       seed: this.seed,
+      columns: buildColumns(hand, this.arrangement),
+      hasManualArrangement: hasManualGroups(this.arrangement, hand),
     }
+  }
+
+  /** 打牌/摸牌之后把人手组里已经不在手上的牌剪掉。 */
+  private syncArrangement(): void {
+    const hand = this.state.players[HUMAN_SEAT]?.hand ?? []
+    this.arrangement = pruneArrangement(this.arrangement, hand)
   }
 
   private emit(): void {
@@ -98,8 +123,32 @@ export class GameStore {
     this.seed = seed ?? Math.floor(Math.random() * 1_000_000)
     this.state = createGame({ seed: this.seed, dealer: 0 })
     this.selectedCardId = null
+    this.arrangement = []
     this.emit()
     this.pump()
+  }
+
+  /**
+   * 理牌：把 `fromId` 拖到 `toId` 所在的列上，两者并成一列。
+   * 这是纯 UI 行为，不改变任何规则状态。
+   */
+  mergeCards(fromId: number, toId: number): void {
+    const hand = this.state.players[HUMAN_SEAT]?.hand ?? []
+    this.arrangement = mergeCards(hand, this.arrangement, fromId, toId)
+    this.emit()
+  }
+
+  /** 理牌：把一张牌从它的组里拆出来，回到自动编排。 */
+  ungroupCard(cardId: number): void {
+    const hand = this.state.players[HUMAN_SEAT]?.hand ?? []
+    this.arrangement = ungroupCard(hand, this.arrangement, cardId)
+    this.emit()
+  }
+
+  /** 一键回到引擎的自动编排（最优分解）。 */
+  autoArrange(): void {
+    this.arrangement = []
+    this.emit()
   }
 
   /** 人类玩家点选/取消选牌。 */
@@ -120,6 +169,7 @@ export class GameStore {
     if (!allowed) return
     this.state = reduce(this.state, action)
     if (action.type === 'discard') this.selectedCardId = null
+    this.syncArrangement()
     this.emit()
     this.pump()
   }
@@ -132,6 +182,7 @@ export class GameStore {
     // 每一步都用「步数」派生 rng，保证同一个 seed 下局面可复现
     const action = chooseAction(this.state, this.difficulty, mulberry32((rng() * 2 ** 31) | 0))
     this.state = reduce(this.state, action)
+    this.syncArrangement()
     this.emit()
     return true
   }

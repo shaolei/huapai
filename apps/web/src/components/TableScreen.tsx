@@ -1,17 +1,43 @@
 import {
+  type Card,
   type GameAction,
   type MeldGroup,
   type PlayerState,
   type RuleSet,
-  arrangeConcealed,
   actingSeat,
   playerAt,
 } from '@huapai/engine'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { type PointerEvent as ReactPointerEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { layoutHand } from '../game/layoutHand'
 import { HUMAN_SEAT, type GameStore, type StoreSnapshot } from '../game/store'
 import { CardFace } from './CardFace'
+
+/** 超过这个像素才算拖拽，否则当成点选。 */
+const DRAG_THRESHOLD_PX = 12
+
+interface DragState {
+  readonly cardId: number
+  readonly startX: number
+  readonly startY: number
+  readonly x: number
+  readonly y: number
+  readonly moved: boolean
+  readonly overId: number | null
+}
+
+/** 指针下面是哪张手牌。`elementFromPoint` 在 jsdom 里可能没有，做兜底。 */
+function hitTestCardId(x: number, y: number): number | null {
+  if (typeof document === 'undefined' || typeof document.elementFromPoint !== 'function') {
+    return null
+  }
+  const element = document.elementFromPoint(x, y)
+  const holder = element?.closest('[data-card-id]')
+  if (!holder) return null
+  const raw = holder.getAttribute('data-card-id')
+  const id = raw === null ? Number.NaN : Number(raw)
+  return Number.isFinite(id) ? id : null
+}
 
 const SEAT_LABEL: Readonly<Record<number, string>> = { 1: '上家', 2: '下家' }
 const VIA_LABEL: Readonly<Record<MeldGroup['via'], string>> = {
@@ -92,7 +118,7 @@ export function TableScreen({ store, snap }: { store: GameStore; snap: StoreSnap
     return () => observer.disconnect()
   }, [])
 
-  const columns = useMemo(() => arrangeConcealed(human.hand), [human.hand])
+  const columns = snap.columns
   const layout = useMemo(
     () => layoutHand({ columns, availableWidth: band.width, availableHeight: band.height }),
     [columns, band.width, band.height],
@@ -106,6 +132,86 @@ export function TableScreen({ store, snap }: { store: GameStore; snap: StoreSnap
     }
     return ids
   }, [snap.legal])
+
+  // ── 拖拽理牌 ────────────────────────────────────────────────
+  // 指针状态放 ref（事件处理器读它），另存一份 view state 只用于渲染。
+  const dragRef = useRef<DragState | null>(null)
+  const [dragView, setDragView] = useState<DragState | null>(null)
+
+  const beginDrag = (card: Card, event: ReactPointerEvent): void => {
+    const next: DragState = {
+      cardId: card.id,
+      startX: event.clientX,
+      startY: event.clientY,
+      x: event.clientX,
+      y: event.clientY,
+      moved: false,
+      overId: null,
+    }
+    dragRef.current = next
+    setDragView(next)
+  }
+
+  const handleDrop = useCallback(
+    (current: DragState, event: PointerEvent): void => {
+      const target = hitTestCardId(event.clientX, event.clientY)
+      if (current.moved && target !== null && target !== current.cardId) {
+        store.mergeCards(current.cardId, target)
+        return
+      }
+      if (current.moved) {
+        // 拖到空白处 = 从组里拆出来（只在手牌区内生效，避免误触）
+        const band = handRef.current?.getBoundingClientRect()
+        const inside =
+          band !== undefined &&
+          event.clientX >= band.left &&
+          event.clientX <= band.right &&
+          event.clientY >= band.top &&
+          event.clientY <= band.bottom
+        if (inside) store.ungroupCard(current.cardId)
+        return
+      }
+      // 没怎么动 = 点选
+      if (discardable.has(current.cardId)) {
+        store.select(snap.selectedCardId === current.cardId ? null : current.cardId)
+      }
+    },
+    [store, discardable, snap.selectedCardId],
+  )
+
+  useEffect(() => {
+    const onMove = (event: PointerEvent): void => {
+      const current = dragRef.current
+      if (!current) return
+      const moved =
+        current.moved ||
+        Math.hypot(event.clientX - current.startX, event.clientY - current.startY) >
+          DRAG_THRESHOLD_PX
+      const next: DragState = {
+        ...current,
+        x: event.clientX,
+        y: event.clientY,
+        moved,
+        overId: moved ? hitTestCardId(event.clientX, event.clientY) : null,
+      }
+      dragRef.current = next
+      setDragView(next)
+    }
+    const onUp = (event: PointerEvent): void => {
+      const current = dragRef.current
+      dragRef.current = null
+      setDragView(null)
+      if (current) handleDrop(current, event)
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+    window.addEventListener('pointercancel', onUp)
+    return () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      window.removeEventListener('pointercancel', onUp)
+    }
+  }, [handleDrop])
 
   const selectedAction: GameAction | null = useMemo(() => {
     if (snap.selectedCardId === null) return null
@@ -214,20 +320,23 @@ export function TableScreen({ store, snap }: { store: GameStore; snap: StoreSnap
                 {column.cards.map((card, index) => (
                   <div
                     key={card.id}
-                    className="hz-col__slot"
+                    className={
+                      'hz-col__slot' +
+                      (dragView?.overId === card.id ? ' is-drop-target' : '') +
+                      (dragView?.cardId === card.id && dragView.moved ? ' is-dragging' : '')
+                    }
+                    data-card-id={card.id}
                     style={{
                       top: column.offsets[index] ?? 0,
                       width: layout.cardWidth,
                       height: layout.cardHeight,
                     }}
+                    onPointerDown={(event) => beginDrag(card, event)}
                   >
                     <CardFace
                       card={card}
                       ruleSet={ruleSet}
                       selected={snap.selectedCardId === card.id}
-                      onClick={
-                        discardable.has(card.id) ? () => store.select(card.id) : undefined
-                      }
                     />
                   </div>
                 ))}
@@ -238,6 +347,15 @@ export function TableScreen({ store, snap }: { store: GameStore; snap: StoreSnap
 
         <div className="hz-hand-band__melds">
           <span className="hz-zone-label">明牌</span>
+          <button
+            type="button"
+            className="hz-btn hz-btn--mini"
+            disabled={!snap.hasManualArrangement}
+            onClick={() => store.autoArrange()}
+            title="回到引擎的最优分解"
+          >
+            自动理牌
+          </button>
           {human.melds.length === 0 ? (
             <span className="hz-hint">无</span>
           ) : (
@@ -247,6 +365,15 @@ export function TableScreen({ store, snap }: { store: GameStore; snap: StoreSnap
           )}
         </div>
       </footer>
+
+      {dragView?.moved ? (
+        <div className="hz-drag-ghost" style={{ left: dragView.x, top: dragView.y }}>
+          <CardFace
+            card={human.hand.find((card) => card.id === dragView.cardId)}
+            ruleSet={ruleSet}
+          />
+        </div>
+      ) : null}
 
       {snap.legal.length > 0 ? (
         <div className="hz-action-bar">
