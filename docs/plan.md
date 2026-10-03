@@ -204,6 +204,22 @@ huapai/
 - release 签名：`assembleRelease` + keystore 走 Secrets（`KEYSTORE_BASE64 / KEY_ALIAS / KEY_PASSWORD / STORE_PASSWORD`）；**一期先只出 debug 包**
 - 需要 GitHub 远端仓库：本地 git 先行，远端地址提供后加 remote 并推送
 
+### 8.1 仓库与产物交付（已拍板）
+
+| 决定 | 取值 | 理由 |
+|---|---|---|
+| 仓库可见性 | **公开** | 公开仓库用标准 GitHub-hosted runner **完全免费且分钟数不限** |
+| APK 交付 | **打到 tag 就发 GitHub Release** | Release 附件**不占** Actions 的 500 MB artifact 共享配额，且长期可下载 |
+
+免费额度事实（依据 [GitHub Actions billing](https://docs.github.com/en/billing/concepts/product-billing/github-actions)）：
+
+- 公开仓库：标准 runner **免费、分钟数不限**
+- 私有仓库（Free 计划）：2,000 分钟/月 + **500 MB artifact 存储**（与 GitHub Packages 共享）+ 10 GB 缓存/仓库
+- Linux 2-core 超配额 $0.006/分钟；**未绑定支付方式时超额直接阻断，不会产生账单**
+- 本项目只在**打 tag 时**出包，一次构建约 2–4 分钟（含缓存），用量远低于任何配额
+- 若哪天改成私有：`retention-days` 调短，或继续用 Release 规避 artifact 配额
+- 缓存是**独立的** 10 GB/仓库，Gradle 缓存几百 MB，不会超
+
 ---
 
 ## 9 Git 项目管理
