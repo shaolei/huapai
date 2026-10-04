@@ -13,6 +13,10 @@
         <item name="windowActionBar">false</item>
         <item name="windowNoTitle">true</item>
         <item name="android:background">@null</item>
+        <!-- 横屏时刘海/挖孔在左右两侧：允许内容延伸到挖孔区，
+             配合 MainActivity 的沉浸式全屏，避免两侧被白白切掉一条。
+             （该属性为 API 28+，低版本系统会忽略。） -->
+        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
     </style>
 
 
