@@ -7,8 +7,9 @@
       用「窗口背景」填充 —— 而 AppCompat 的 DayNight 主题在深色模式下会给出
       #121212 那种灰，和牌桌的绿放在一起非常割裂。
 
-      这个值必须与 apps/web/src/styles/global.css 里的 --hz-felt-0 保持一致，
+      这个值必须与 apps/web/src/styles/global.css 里的 CSS 变量 hz-felt-0 保持一致，
       改一个就要改另一个。
+      （注意：XML 注释里不能出现连续两个连字符，所以这里不直接写那个变量名。）
     -->
     <color name="huapai_felt">#FF0D3B24</color>
 </resources>
