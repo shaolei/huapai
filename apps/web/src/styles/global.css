@@ -11,9 +11,10 @@
   --hz-inset-left: env(safe-area-inset-left, 0px);
   --hz-inset-right: env(safe-area-inset-right, 0px);
 
-  /* 版面高度（计划书 §5.3：28 + 128 + 182 = 338，余 14 给安全区） */
+  /* 版面高度（计划书 §5.3）：手牌区从 182 收到 158 —— 去掉列类型徽章后
+     这块不再需要那么多高度，省下来的给主区（横屏纵向本来就紧张） */
   --hz-info-bar-h: 28px;
-  --hz-hand-band-h: 182px;
+  --hz-hand-band-h: 158px;
 
   /* 牌面几何默认值；实际值由 layoutHand 通过行内 CSS 变量覆盖 */
   --hz-card-w: 30px;
@@ -116,7 +117,9 @@ body {
 
 .hz-table {
   display: grid;
-  grid-template-columns: 104px 1fr 104px;
+  /* 侧栏要同时装下「信息栏(88px) + 弃牌」—— 104px 时弃牌只剩十来个像素，
+     等于看不见。给到 150~200px，弃牌才有地方朝中央铺开。 */
+  grid-template-columns: minmax(150px, 200px) 1fr minmax(150px, 200px);
   gap: 6px;
   min-height: 0;
   padding: 6px 0;
@@ -124,7 +127,7 @@ body {
 
 .hz-seat {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   gap: 4px;
   padding: 6px;
   border: 1px solid var(--hz-line);
@@ -134,9 +137,23 @@ body {
   overflow: hidden;
 }
 
+/* 右家的信息栏贴右边，弃牌朝左（中央）展开 */
+.hz-seat--right {
+  flex-direction: row-reverse;
+}
+
 .hz-seat.is-acting {
   border-color: var(--hz-accent);
   box-shadow: 0 0 0 1px rgba(255, 207, 92, 0.35) inset;
+}
+
+.hz-seat__info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 88px;
+  flex: 0 0 auto;
+  min-width: 0;
 }
 
 .hz-seat__head {
@@ -389,12 +406,9 @@ body {
   );
 }
 
-/* 列类型徽章：标在列底那张完整可见的牌上 */
+/* 列类型徽章已移除：它占掉列底那张牌的下半部分，而玩家更需要的是高度 */
 .hz-card__badge {
-  font-size: calc(var(--hz-band, 30px) * 0.42);
-  font-weight: 700;
-  color: rgba(0, 0, 0, 0.42);
-  letter-spacing: 0.1em;
+  display: none;
 }
 
 .hz-card--down {
@@ -472,15 +486,21 @@ body {
   font-size: 10px;
 }
 
-/* AI 打出的牌贴在自己信息栏下方 —— 这样一眼能分清是谁打的 */
+/* AI 打出的牌：紧挨信息栏、朝中央铺开。
+   以前放在信息栏下面，会越堆越高最后看不全。 */
 .hz-seat__discards {
   display: flex;
   flex-wrap: wrap;
   gap: 2px;
   align-content: flex-start;
+  justify-content: flex-start;
   overflow: hidden;
   min-height: 0;
   flex: 1 1 auto;
+}
+
+.hz-seat--right .hz-seat__discards {
+  justify-content: flex-end;
 }
 
 /* ============================================================
@@ -603,11 +623,25 @@ body {
   opacity: 0.3;
 }
 
-/* 落点高亮 */
-.hz-col__slot.is-drop-target .hz-card {
+/* 落点高亮：整列都亮，而不是只亮某张牌 —— 因为拖拽的落点就是「这一列」 */
+.hz-col.is-drop-target .hz-card {
   box-shadow:
     0 0 0 2px var(--hz-accent),
     0 0 10px rgba(255, 207, 92, 0.5);
+}
+
+/* 空列的落点占位：让玩家能主动把牌拖到一个空列 */
+.hz-col__empty {
+  display: block;
+  width: 100%;
+  border: 1px dashed rgba(255, 207, 92, 0.35);
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.hz-col.is-drop-target .hz-col__empty {
+  border-color: var(--hz-accent);
+  background: rgba(255, 207, 92, 0.12);
 }
 
 /* ============================================================

@@ -1,50 +1,41 @@
 /**
- * 人工理牌（编组）模型 —— 纯函数，不碰 DOM。
+ * 人工理牌：**固定 8 列**模型（纯函数，不碰 DOM）。
  *
- * 设计：玩家亲手分的组是一个**有序的「牌 id 组」列表**，其余牌继续走引擎的
- * `arrangeConcealed` 自动编排。这样：
- *   - 玩家不动的部分，自动化永远生效（新摸的牌自动进散张池）
- *   - 摸牌/打牌/副露导致牌离开手牌时，只需要把死 id 剪掉
+ * 为什么从「自由分组」改成固定 8 列：
+ *   以前是「人工组 + 引擎自动列」混排，拖一张牌会让**自动那部分重新推导**，
+ *   于是旁边的列看起来像被换掉了 —— 用户报的「拖过去变成交换」就是这个。
+ *   固定 8 列之后，一次拖拽只动两列，其余原地不动，行为可预测。
  *
- * 显示顺序 = 人工组（按玩家排的顺序）+ 自动列。人工组排前面，
- * 因为那是玩家显式表达的意图。
+ * 8 这个数字不是随便定的：胡牌条件就是「8 个单元 + 2 张听头」，所以 8 列天然
+ * 对应「离胡牌还差几列」。
  */
 
 import {
   type Card,
   type Column,
   type ColumnKind,
-  type TileChar,
   arrangeConcealed,
   isSentence,
   sentenceCompletions,
 } from '@huapai/engine'
 
-/** 人工编组：一串「牌 id 组」，顺序即显示顺序。 */
+/** 手牌固定列数。 */
+export const HAND_SLOTS = 8
+
+/** 编组：8 个槽位，每个槽位是一串牌 id。 */
 export type Arrangement = readonly (readonly number[])[]
 
-/** 剪掉已经不在手上的牌；顺手丢掉空组。 */
-export function pruneArrangement(
-  arrangement: Arrangement,
-  hand: readonly Card[],
-): number[][] {
-  const alive = new Set(hand.map((card) => card.id))
-  return arrangement
-    .map((group) => group.filter((id) => alive.has(id)))
-    .filter((group) => group.length > 0)
+export function createSlots(): number[][] {
+  return Array.from({ length: HAND_SLOTS }, () => [])
 }
 
-/** 推断一个人工组看起来像什么（只影响 UI 的列样式与提示）。 */
+/** 推断一个槽位里的牌看起来像什么（只影响列样式）。 */
 export function classifyGroup(cards: readonly Card[]): ColumnKind {
   if (cards.length === 0) return 'loose'
   if (cards.length === 1) return 'loose'
 
   const chars = cards.map((card) => card.char)
-  const distinct = new Set(chars)
-  if (distinct.size === 1) {
-    // 同字：3 张及以上算同字单元，2 张算对
-    return cards.length >= 3 ? 'same' : 'pair'
-  }
+  if (new Set(chars).size === 1) return cards.length >= 3 ? 'same' : 'pair'
   if (cards.length === 3 && isSentence(chars)) return 'sentence'
   if (cards.length === 2) {
     const a = chars[0]
@@ -54,92 +45,136 @@ export function classifyGroup(cards: readonly Card[]): ColumnKind {
   return 'loose'
 }
 
-/** 人工组 + 自动列，合成最终要渲染的列。 */
-export function buildColumns(hand: readonly Card[], arrangement: Arrangement): Column[] {
-  const pruned = pruneArrangement(arrangement, hand)
-  const byId = new Map(hand.map((card) => [card.id, card]))
-  const grouped = new Set<number>()
-  const manual: Column[] = []
+/**
+ * 把任意形状的编组规整成**恰好 8 列**：
+ *   1. 按顺序采纳玩家已经分好的部分（死牌丢弃）
+ *   2. 剩下没人管的牌，逐张放进「当前最空」的那一列
+ *
+ * 第 2 步用「最空优先」而不是「塞最后一列」，是为了稳定：
+ * 摸进一张新牌只会让**一列**变长，不会让整手牌重排。
+ */
+function packGroups(hand: readonly Card[], groups: Arrangement): number[][] {
+  const alive = new Set(hand.map((card) => card.id))
+  const slots = createSlots()
+  const placed = new Set<number>()
 
-  for (const group of pruned) {
-    const cards: Card[] = []
-    for (const id of group) {
-      const card = byId.get(id)
-      if (card) cards.push(card)
-      grouped.add(id)
+  const limit = Math.min(groups.length, HAND_SLOTS)
+  for (let index = 0; index < limit; index += 1) {
+    for (const id of groups[index] ?? []) {
+      if (!alive.has(id) || placed.has(id)) continue
+      slots[index]?.push(id)
+      placed.add(id)
     }
-    if (cards.length === 0) continue
-    manual.push({
-      key: `manual:${group.join('-')}`,
-      kind: classifyGroup(cards),
-      cards,
-    })
   }
 
-  const rest = hand.filter((card) => !grouped.has(card.id))
-  return [...manual, ...arrangeConcealed(rest)]
+  for (const card of hand) {
+    if (placed.has(card.id)) continue
+    let target = 0
+    for (let index = 1; index < HAND_SLOTS; index += 1) {
+      const current = slots[index]?.length ?? 0
+      const best = slots[target]?.length ?? 0
+      if (current < best) target = index
+    }
+    slots[target]?.push(card.id)
+    placed.add(card.id)
+  }
+
+  return slots
+}
+
+/** 把任意编组规整成恰好 8 列。 */
+export function normalizeSlots(
+  hand: readonly Card[],
+  arrangement: Arrangement = [],
+): number[][] {
+  return packGroups(hand, arrangement)
 }
 
 /**
- * 把 `fromId` 并进 `toId` 所在的那一列（拖到别的牌上）。
- * `toId` 原本是散牌时会为它新建一列。顺序上把 `fromId` 追加到末尾，
- * 于是它成为该列**完整可见**的那一张。
+ * 当前**实际生效**的 8 列。
+ *
+ * 约定：编组为空 = 玩家没手工理过牌 = 用引擎的语义分组（句/对/坎…）。
+ * 所有读取与移动都必须走这个函数，否则「空编组」会被当成「随便填」，
+ * 手工拖一次就会把整手牌的基准换掉。
  */
-export function mergeCards(
+export function effectiveSlots(
   hand: readonly Card[],
-  arrangement: Arrangement,
-  fromId: number,
-  toId: number,
+  arrangement: Arrangement = [],
 ): number[][] {
-  const pruned = pruneArrangement(arrangement, hand)
-  if (fromId === toId || !hand.some((card) => card.id === toId)) return pruned
-  if (!hand.some((card) => card.id === fromId)) return pruned
-
-  let groups = pruned
-    .map((group) => group.filter((id) => id !== fromId))
-    .filter((group) => group.length > 0)
-
-  let index = groups.findIndex((group) => group.includes(toId))
-  if (index < 0) {
-    groups = [...groups, [toId]]
-    index = groups.length - 1
-  }
-  const target = groups[index]
-  if (!target) return groups
-  groups[index] = [...target, fromId]
-  return groups
+  return arrangement.length === 0 ? autoSlots(hand) : packGroups(hand, arrangement)
 }
 
-/** 把 `cardId` 从它所在的组里拆出来，回到自动编排（拖到空白处）。 */
-export function ungroupCard(
+/** 生成要渲染的 8 列。**空列也会保留**，这样它仍然是可拖拽的落点。 */
+export function buildColumns(hand: readonly Card[], arrangement: Arrangement = []): Column[] {
+  const byId = new Map(hand.map((card) => [card.id, card]))
+  const slots = effectiveSlots(hand, arrangement)
+
+  return slots.map((ids, index) => {
+    const cards = ids
+      .map((id) => byId.get(id))
+      .filter((card): card is Card => card !== undefined)
+    return {
+      // key 用槽位序号而不是牌 id：牌在列间移动时 DOM 节点保持稳定
+      key: `slot-${index}`,
+      kind: classifyGroup(cards),
+      cards,
+    }
+  })
+}
+
+/** 这张牌现在在第几列。 */
+export function slotIndexOf(
   hand: readonly Card[],
   arrangement: Arrangement,
   cardId: number,
+): number {
+  const slots = effectiveSlots(hand, arrangement)
+  return slots.findIndex((ids) => ids.includes(cardId))
+}
+
+/**
+ * 把 `cardId` **移动**到 `targetSlot`（追加到该列末尾）。
+ *
+ * 注意是「移动」不是「交换」：源列少一张、目标列多一张，其它列完全不动。
+ * 这正是之前行为不对的地方。
+ */
+export function moveCardToSlot(
+  hand: readonly Card[],
+  arrangement: Arrangement,
+  cardId: number,
+  targetSlot: number,
 ): number[][] {
-  return pruneArrangement(arrangement, hand)
-    .map((group) => group.filter((id) => id !== cardId))
-    .filter((group) => group.length > 0)
-}
+  if (targetSlot < 0 || targetSlot >= HAND_SLOTS) return effectiveSlots(hand, arrangement)
+  const slots = effectiveSlots(hand, arrangement)
+  if (slots[targetSlot]?.includes(cardId)) return slots
 
-/** 这张牌现在在不在某个人工组里。 */
-export function isGrouped(arrangement: Arrangement, cardId: number): boolean {
-  return arrangement.some((group) => group.includes(cardId))
-}
-
-/** 供 UI 判断要不要点亮「自动理牌」按钮。 */
-export function hasManualGroups(arrangement: Arrangement, hand: readonly Card[]): boolean {
-  return pruneArrangement(arrangement, hand).length > 0
-}
-
-/** 某个字是否在人工组里（UI 提示用）。 */
-export function groupedChars(arrangement: Arrangement, hand: readonly Card[]): Set<TileChar> {
-  const byId = new Map(hand.map((card) => [card.id, card]))
-  const out = new Set<TileChar>()
-  for (const group of pruneArrangement(arrangement, hand)) {
-    for (const id of group) {
-      const card = byId.get(id)
-      if (card) out.add(card.char)
-    }
+  for (const slot of slots) {
+    const index = slot.indexOf(cardId)
+    if (index >= 0) slot.splice(index, 1)
   }
-  return out
+  slots[targetSlot]?.push(cardId)
+  return slots
+}
+
+/**
+ * 一键自动理牌：用引擎的语义分组（句/对/坎…）去填这 8 列。
+ * 语义组多于 8 个时，多出来的牌交给 `normalizeSlots` 的最空优先规则。
+ */
+export function autoSlots(hand: readonly Card[]): number[][] {
+  const groups = arrangeConcealed(hand).map((column) => column.cards.map((card) => card.id))
+  return packGroups(hand, groups)
+}
+
+/** 玩家是不是没手工理过牌（决定「自动理牌」按钮要不要点亮）。 */
+export function isAutoArrangement(hand: readonly Card[], arrangement: Arrangement): boolean {
+  if (arrangement.length === 0) return true
+  return isSameSlots(effectiveSlots(hand, arrangement), autoSlots(hand))
+}
+
+function isSameSlots(a: readonly (readonly number[])[], b: readonly (readonly number[])[]): boolean {
+  if (a.length !== b.length) return false
+  return a.every((ids, index) => {
+    const other = b[index] ?? []
+    return ids.length === other.length && ids.every((id) => other.includes(id))
+  })
 }

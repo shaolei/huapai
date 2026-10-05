@@ -44,6 +44,12 @@ export interface LayoutInput {
   readonly cardHeight?: number
   readonly stackStep?: number
   readonly gap?: number
+  /**
+   * 是否允许「打包」（把散张并成一列、必要时吸收提示列）。
+   * 默认开启；**手牌固定 8 列时必须关掉** —— 否则布局层会把固定列重新分块，
+   * 玩家拖拽的语义就废了。
+   */
+  readonly packing?: boolean
 }
 
 export interface PlacedColumn {
@@ -192,7 +198,15 @@ export function layoutHand(input: LayoutInput): HandLayout {
     const scaledHeight = cardHeight * scale
     const scaledStep = step * scale
     const capacity = capacityFor(scaledHeight, scaledStep, availableHeight)
-    const working = repack(input.columns, capacity, absorbHints)
+    const working: Working[] =
+      input.packing === false
+        ? input.columns.map((column) => ({
+            key: column.key,
+            kind: column.kind,
+            cards: column.cards,
+            packed: false,
+          }))
+        : repack(input.columns, capacity, absorbHints)
     const { width, height } = measure(working, scaledWidth, scaledHeight, scaledStep, gap)
     return {
       working,

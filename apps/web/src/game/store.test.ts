@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it } from 'vitest'
 
+import { HAND_SLOTS } from './arrangement'
 import { GameStore } from './store'
 
 afterEach(() => {
-  // 每个用例自己 dispose，这里只做兜底
+  // 每个用例自己 dispose
 })
 
 function makeStore(seed = 777): GameStore {
@@ -27,31 +28,36 @@ function toDiscardTurn(store: GameStore): void {
 }
 
 describe('store 里的理牌接线', () => {
-  it('合并两张牌之后，列里确实多了一张', () => {
+  it('手牌永远是固定 8 列', () => {
     const store = makeStore()
-    const hand = store.getSnapshot().state.players[0]?.hand ?? []
-    const [first, second] = [hand[0], hand[1]]
-    expect(first).toBeDefined()
-    expect(second).toBeDefined()
-
-    const before = store.getSnapshot().columns.length
-    store.mergeCards(second!.id, first!.id)
-    const after = store.getSnapshot()
-
-    // 两张牌现在同一列
-    const column = after.columns.find((c) => c.cards.some((card) => card.id === first!.id))
-    expect(column?.cards.some((card) => card.id === second!.id)).toBe(true)
-    // 列数减少或持平（合并不可能让列变多）
-    expect(after.columns.length).toBeLessThanOrEqual(before)
-    expect(after.hasManualArrangement).toBe(true)
+    expect(store.getSnapshot().columns).toHaveLength(HAND_SLOTS)
     store.dispose()
   })
 
-  it('合并不会丢牌：所有牌仍然出现在某一列里', () => {
+  it('移到另一列：目标列 +1、源列 -1、其余列不变', () => {
     const store = makeStore(4242)
+    const before = store.getSnapshot().columns.map((c) => c.cards.map((x) => x.id))
+    const moving = before[0]?.[0]
+    expect(moving).toBeDefined()
+
+    store.moveCardToSlot(moving!, 3)
+    const after = store.getSnapshot().columns.map((c) => c.cards.map((x) => x.id))
+
+    expect(after[3]).toEqual([...(before[3] ?? []), moving!])
+    expect(after[0]).toEqual((before[0] ?? []).filter((id) => id !== moving))
+    for (let i = 0; i < HAND_SLOTS; i += 1) {
+      if (i === 0 || i === 3) continue
+      expect(after[i], `第 ${i} 列不该变`).toEqual(before[i])
+    }
+    expect(store.getSnapshot().hasManualArrangement).toBe(true)
+    store.dispose()
+  })
+
+  it('理牌不丢牌', () => {
+    const store = makeStore(31)
     const hand = store.getSnapshot().state.players[0]?.hand ?? []
-    for (let i = 1; i < Math.min(8, hand.length); i += 1) {
-      store.mergeCards(hand[i]!.id, hand[0]!.id)
+    for (let slot = 0; slot < HAND_SLOTS; slot += 1) {
+      store.moveCardToSlot(hand[slot]!.id, (slot + 3) % HAND_SLOTS)
     }
     const cards = store.getSnapshot().columns.flatMap((c) => c.cards.map((x) => x.id))
     expect(cards).toHaveLength(hand.length)
@@ -59,39 +65,28 @@ describe('store 里的理牌接线', () => {
     store.dispose()
   })
 
-  it('拆牌会把牌移出人工组', () => {
+  it('自动理牌清空手工编组', () => {
     const store = makeStore(99)
     const hand = store.getSnapshot().state.players[0]?.hand ?? []
-    store.mergeCards(hand[1]!.id, hand[0]!.id)
-    store.ungroupCard(hand[1]!.id)
-    const columns = store.getSnapshot().columns
-    const withFirst = columns.find((c) => c.cards.some((card) => card.id === hand[0]!.id))
-    expect(withFirst?.cards.map((card) => card.id)).toEqual([hand[0]!.id])
-    store.dispose()
-  })
-
-  it('自动理牌清空人工组', () => {
-    const store = makeStore(31)
-    const hand = store.getSnapshot().state.players[0]?.hand ?? []
-    store.mergeCards(hand[1]!.id, hand[0]!.id)
+    store.moveCardToSlot(hand[0]!.id, 5)
     expect(store.getSnapshot().hasManualArrangement).toBe(true)
     store.autoArrange()
     expect(store.getSnapshot().hasManualArrangement).toBe(false)
+    expect(store.getSnapshot().columns).toHaveLength(HAND_SLOTS)
     store.dispose()
   })
 
-  it('打掉牌之后，人工组里不会留下已经不存在的牌', () => {
+  it('打掉牌之后，编组里不会留下已经不存在的牌', () => {
     const store = makeStore(2026)
     toDiscardTurn(store)
     const hand = store.getSnapshot().state.players[0]?.hand ?? []
     const victim = hand[0]!
-    store.mergeCards(hand[1]!.id, victim.id)
+    store.moveCardToSlot(hand[1]!.id, 0)
     store.play({ type: 'discard', seat: 0, cardId: victim.id })
 
     const after = store.getSnapshot()
     const ids = after.columns.flatMap((c) => c.cards.map((card) => card.id))
     expect(ids).not.toContain(victim.id)
-    // 剩下的牌数量守恒
     expect(ids).toHaveLength(after.state.players[0]?.hand.length ?? -1)
     store.dispose()
   })
@@ -100,8 +95,7 @@ describe('store 里的理牌接线', () => {
     const store = makeStore(5)
     const before = store.getSnapshot()
     store.play({ type: 'discard', seat: 2, cardId: 999999 })
-    const after = store.getSnapshot()
-    expect(after.state).toBe(before.state)
+    expect(store.getSnapshot().state).toBe(before.state)
     store.dispose()
   })
 })

@@ -3,200 +3,164 @@ import { arrangeConcealed } from '@huapai/engine'
 import { describe, expect, it } from 'vitest'
 
 import {
+  HAND_SLOTS,
   buildColumns,
   classifyGroup,
-  hasManualGroups,
-  isGrouped,
-  mergeCards,
-  pruneArrangement,
-  ungroupCard,
+  createSlots,
+  effectiveSlots,
+  isAutoArrangement,
+  moveCardToSlot,
+  normalizeSlots,
 } from './arrangement'
 
 let nextId = 1
 function card(char: TileChar, variant: 'plain' | 'flower' = 'plain'): Card {
   return { id: nextId++, char, variant }
 }
-
 function handOf(...chars: readonly TileChar[]): Card[] {
   return chars.map((char) => card(char))
 }
+function ids(columns: readonly { cards: readonly Card[] }[], index: number): number[] {
+  return (columns[index]?.cards ?? []).map((c) => c.id)
+}
 
-describe('buildColumns', () => {
-  it('没有人工编组时 == 引擎的自动编排', () => {
+describe('固定 8 列', () => {
+  it('永远返回 8 列，不管牌有多少张', () => {
+    for (const count of [1, 8, 25, 26]) {
+      const hand = handOf(...Array.from({ length: count }, () => '孔' as TileChar))
+      expect(buildColumns(hand, []).length).toBe(HAND_SLOTS)
+    }
+  })
+
+  it('不丢牌：8 列里的牌 = 手牌', () => {
+    const hand = handOf('上', '大', '人', '孔', '孔', '孔', '六', '七', '十', '土')
+    const all = buildColumns(hand, []).flatMap((c) => c.cards.map((x) => x.id)).sort()
+    expect(all).toEqual(hand.map((c) => c.id).sort())
+  })
+
+  it('没手工理过时用引擎的语义分组（一列就是一个单元）', () => {
+    const hand = handOf('上', '大', '人', '孔', '孔', '孔')
+    const columns = buildColumns(hand, [])
+    const kinds = columns.map((c) => c.kind).filter((k) => k !== 'loose')
+    expect(kinds).toContain('sentence')
+    expect(kinds).toContain('same')
+  })
+
+  it('空编组与 autoSlots 等价（约定：空 = 没手工理过）', () => {
     const hand = handOf('上', '大', '人', '孔', '孔', '孔', '六')
-    expect(buildColumns(hand, []).map((c) => c.kind)).toEqual(
-      arrangeConcealed(hand).map((c) => c.kind),
+    expect(effectiveSlots(hand, [])).toEqual(
+      normalizeSlots(
+        hand,
+        arrangeConcealed(hand).map((c) => c.cards.map((x) => x.id)),
+      ),
+    )
+    expect(isAutoArrangement(hand, [])).toBe(true)
+  })
+})
+
+describe('拖拽 = 移动，不是交换（这是之前的 bug）', () => {
+  const hand = handOf('上', '大', '人', '孔', '孔', '孔', '六', '七', '十', '土')
+
+  it('目标列多一张、源列少一张，**其余列完全不动**', () => {
+    const before = buildColumns(hand, [])
+    const moving = before[0]?.cards[0]
+    expect(moving).toBeDefined()
+    const targetSlot = 2
+
+    const moved = moveCardToSlot(hand, [], moving!.id, targetSlot)
+    const after = buildColumns(hand, moved)
+
+    for (let i = 0; i < HAND_SLOTS; i += 1) {
+      const beforeIds = ids(before, i)
+      const afterIds = ids(after, i)
+      if (i === 0) {
+        expect(afterIds, '源列应少一张').toEqual(beforeIds.filter((id) => id !== moving!.id))
+      } else if (i === targetSlot) {
+        expect(afterIds, '目标列应多一张且在末尾').toEqual([...beforeIds, moving!.id])
+      } else {
+        // 核心断言：其它列一个都没动。以前自动列会重新推导，看起来就像被交换了
+        expect(afterIds, `第 ${i} 列不该变`).toEqual(beforeIds)
+      }
+    }
+  })
+
+  it('搬到已经在的那一列 = 什么都不做', () => {
+    const before = buildColumns(hand, [])
+    const c = before[1]?.cards[0]
+    const slot = 1
+    const moved = moveCardToSlot(hand, [], c!.id, slot)
+    expect(buildColumns(hand, moved).map((x) => x.cards.map((y) => y.id))).toEqual(
+      before.map((x) => x.cards.map((y) => y.id)),
     )
   })
 
-  it('人工组排在自动列之前，剩下的牌继续自动编排', () => {
-    const hand = handOf('上', '大', '人', '孔', '孔', '孔', '六')
-    // 把「六」和一张「孔」编成一组；剩下的 上大人 + 孔孔 仍应自动排成一句 + 一对
-    const columns = buildColumns(hand, [[hand[6]!.id, hand[3]!.id]])
-    expect(columns[0]?.cards.map((c) => c.char)).toEqual(['六', '孔'])
-    expect(columns.some((c) => c.kind === 'sentence')).toBe(true)
-    expect(columns.some((c) => c.kind === 'pair')).toBe(true)
+  it('越界的列号 → 原样返回', () => {
+    const before = effectiveSlots(hand, [])
+    expect(moveCardToSlot(hand, [], hand[0]!.id, -1)).toEqual(before)
+    expect(moveCardToSlot(hand, [], hand[0]!.id, HAND_SLOTS)).toEqual(before)
   })
 
-  it('不丢牌：列里所有牌 = 手牌', () => {
-    const hand = handOf('上', '大', '人', '孔', '孔', '孔', '六', '七', '十', '土')
-    const arrangement = [
-      [hand[6]!.id, hand[3]!.id],
-      [hand[0]!.id, hand[1]!.id, hand[2]!.id],
-    ]
-    const columns = buildColumns(hand, arrangement)
-    const ids = columns.flatMap((c) => c.cards.map((x) => x.id)).sort()
-    expect(ids).toEqual(hand.map((c) => c.id).sort())
-  })
-
-  it('人工组的列 key 稳定且不与自动列冲突', () => {
-    const hand = handOf('上', '大', '人', '六')
-    const columns = buildColumns(hand, [[hand[0]!.id, hand[1]!.id]])
-    const keys = columns.map((c) => c.key)
-    expect(new Set(keys).size).toBe(keys.length)
-    expect(keys[0]?.startsWith('manual:')).toBe(true)
+  it('搬到空列：那一列变成 1 张，其余不动', () => {
+    const many = handOf(...Array.from({ length: 26 }, (_, i) => (i % 2 ? '孔' : '九') as TileChar))
+    let slots = moveCardToSlot(many, [], many[0]!.id, 0)
+    // 先把第 7 列清空
+    for (const c of many.slice(1)) {
+      const inSlot7 = slots[7]?.includes(c.id)
+      if (inSlot7) slots = moveCardToSlot(many, slots, c.id, 0)
+    }
+    expect(slots[7]).toEqual([])
+    const target = many[5]!
+    const movedSlots = moveCardToSlot(many, slots, target.id, 7)
+    expect(movedSlots[7]).toEqual([target.id])
   })
 })
 
-describe('mergeCards', () => {
-  it('把一张牌并进另一张所在的列', () => {
-    const hand = handOf('上', '大', '人', '六')
-    const merged = mergeCards(hand, [], hand[3]!.id, hand[0]!.id)
-    expect(merged).toHaveLength(1)
-    expect(merged[0]).toEqual([hand[0]!.id, hand[3]!.id])
+describe('摸牌后的稳定性', () => {
+  it('手工理过牌之后，新摸的牌只会让**一列**变长，不会打散原有分布', () => {
+    const base = handOf('上', '大', '人', '孔', '孔', '孔', '六', '七', '十')
+    // 先手工动一下，进入手工模式
+    const manual = moveCardToSlot(base, [], base[0]!.id, 5)
+    const before = normalizeSlots(base, manual)
+
+    const drawn = card('九')
+    const after = normalizeSlots([...base, drawn], manual)
+
+    let changed = 0
+    for (let i = 0; i < HAND_SLOTS; i += 1) {
+      const b = (before[i] ?? []).slice().sort()
+      const a = (after[i] ?? []).filter((id) => id !== drawn.id).slice().sort()
+      if (JSON.stringify(a) !== JSON.stringify(b)) changed += 1
+    }
+    expect(changed, '原有牌被打散重排了').toBe(0)
   })
 
-  it('并进已有组时追加到末尾（成为完整可见的那张）', () => {
-    const hand = handOf('上', '大', '人', '六')
-    const first = mergeCards(hand, [], hand[1]!.id, hand[0]!.id) // [上, 大]
-    const second = mergeCards(hand, first, hand[3]!.id, hand[0]!.id) // [上, 大, 六]
-    expect(second[0]).toEqual([hand[0]!.id, hand[1]!.id, hand[3]!.id])
-  })
-
-  it('把牌从原组搬走：不会同时出现在两组，原组剩下的牌留在原地', () => {
-    const hand = handOf('上', '大', '人', '六')
-    let arrangement = mergeCards(hand, [], hand[1]!.id, hand[0]!.id) // [上, 大]
-    arrangement = mergeCards(hand, arrangement, hand[1]!.id, hand[3]!.id) // 大 搬到 六
-    const flat = arrangement.flat()
-    expect(new Set(flat).size).toBe(flat.length) // 没有重复
-    // 大 现在和 六 一组
-    const withLiu = arrangement.find((group) => group.includes(hand[3]!.id))
-    expect(withLiu).toContain(hand[1]!.id)
-    // 上 留在自己的单张组里（搬走大不会把上一起带走）
-    const withShang = arrangement.find((group) => group.includes(hand[0]!.id))
-    expect(withShang).toEqual([hand[0]!.id])
-  })
-
-  it('自己拖自己、或者目标/来源不在手上 → 原样返回', () => {
-    const hand = handOf('上', '大')
-    expect(mergeCards(hand, [], hand[0]!.id, hand[0]!.id)).toEqual([])
-    expect(mergeCards(hand, [], 9999, hand[0]!.id)).toEqual([])
-    expect(mergeCards(hand, [], hand[0]!.id, 9999)).toEqual([])
-  })
-
-  it('多次合并不丢牌', () => {
-    const hand = handOf('上', '大', '人', '孔', '孔', '孔', '六')
-    let arrangement: number[][] = []
-    arrangement = mergeCards(hand, arrangement, hand[1]!.id, hand[0]!.id)
-    arrangement = mergeCards(hand, arrangement, hand[2]!.id, hand[0]!.id)
-    arrangement = mergeCards(hand, arrangement, hand[4]!.id, hand[3]!.id)
-    const flat = arrangement.flat()
-    expect(new Set(flat).size).toBe(flat.length)
-    expect(flat.length).toBe(5)
-    const columns = buildColumns(hand, arrangement)
-    expect(columns.flatMap((c) => c.cards)).toHaveLength(hand.length)
-  })
-})
-
-describe('ungroupCard', () => {
-  it('把牌从组里拆出来', () => {
-    const hand = handOf('上', '大', '人')
-    const merged = mergeCards(hand, [], hand[1]!.id, hand[0]!.id)
-    const split = ungroupCard(hand, merged, hand[1]!.id)
-    expect(split.flat()).not.toContain(hand[1]!.id)
-    expect(split.flat()).toContain(hand[0]!.id)
-  })
-
-  it('拆掉组里最后一张后整组消失', () => {
-    const hand = handOf('上', '大')
-    expect(ungroupCard(hand, [[hand[0]!.id]], hand[0]!.id)).toEqual([])
-  })
-
-  it('从两张的组里拆走一张，另一张留在组里', () => {
-    const hand = handOf('上', '大')
-    const merged = mergeCards(hand, [], hand[1]!.id, hand[0]!.id)
-    expect(ungroupCard(hand, merged, hand[0]!.id)).toEqual([[hand[1]!.id]])
-  })
-
-  it('拆出来的牌回到自动编排，总数不变', () => {
-    const hand = handOf('上', '大', '人', '六')
-    const merged = mergeCards(hand, [], hand[1]!.id, hand[0]!.id)
-    const split = ungroupCard(hand, merged, hand[1]!.id)
-    const columns = buildColumns(hand, split)
-    expect(columns.flatMap((c) => c.cards)).toHaveLength(hand.length)
-  })
-})
-
-describe('摸牌 / 打牌后的剪枝', () => {
-  it('打掉的牌会自动从人工组里消失', () => {
-    const hand = handOf('上', '大', '人', '六')
-    const merged = mergeCards(hand, [], hand[3]!.id, hand[0]!.id)
-    const afterDiscard = hand.filter((c) => c.id !== hand[3]!.id)
-    const pruned = pruneArrangement(merged, afterDiscard)
-    expect(pruned.flat()).not.toContain(hand[3]!.id)
-    expect(pruned.flat()).toContain(hand[0]!.id)
-  })
-
-  it('组里只剩死牌时整组被丢掉', () => {
-    const hand = handOf('上', '大')
-    const merged = mergeCards(hand, [], hand[1]!.id, hand[0]!.id)
-    expect(pruneArrangement(merged, [])).toEqual([])
-  })
-
-  it('新摸进来的牌不在任何人工组里 → 会走自动编排', () => {
-    const hand = handOf('上', '大')
-    const merged = mergeCards(hand, [], hand[1]!.id, hand[0]!.id)
-    const withDrawn = [...hand, card('九')]
-    const columns = buildColumns(withDrawn, merged)
-    const drawn = withDrawn[2]!
-    expect(isGrouped(merged, drawn.id)).toBe(false)
-    const drawnColumn = columns.find((c) => c.cards.some((c2) => c2.id === drawn.id))
-    expect(drawnColumn?.kind).toBe('loose')
+  it('没手工理过时，自动分组会随牌变化重新找最优解（这是期望行为）', () => {
+    const base = handOf('上', '大', '人', '孔', '孔', '孔', '八', '九')
+    const before = buildColumns(base, []).map((c) => c.cards.length)
+    const after = buildColumns([...base, card('子')], []).map((c) => c.cards.length)
+    // 加了「子」之后 八九子 成句，分组必然变化
+    expect(after).not.toEqual(before)
   })
 })
 
 describe('classifyGroup', () => {
-  it('单张 → loose', () => {
+  it('单张散、两张同字对、三张同字同字单元', () => {
     expect(classifyGroup([card('上')])).toBe('loose')
-  })
-
-  it('两张同字 → pair；三张同字 → same', () => {
     expect(classifyGroup([card('孔'), card('孔')])).toBe('pair')
     expect(classifyGroup([card('孔'), card('孔'), card('孔')])).toBe('same')
-    expect(classifyGroup([card('孔'), card('孔'), card('孔'), card('孔')])).toBe('same')
   })
 
-  it('三张成句 → sentence', () => {
+  it('三张成句 → sentence；两张同属一个句 → kou', () => {
     expect(classifyGroup([card('上'), card('大'), card('人')])).toBe('sentence')
-    expect(classifyGroup([card('三'), card('四'), card('五')])).toBe('sentence')
-  })
-
-  it('两张同属一个句 → kou', () => {
     expect(classifyGroup([card('化'), card('三')])).toBe('kou')
-    expect(classifyGroup([card('八'), card('九')])).toBe('kou')
-  })
-
-  it('乱七八糟的组合 → loose', () => {
     expect(classifyGroup([card('上'), card('孔')])).toBe('loose')
-    expect(classifyGroup([card('上'), card('大'), card('孔')])).toBe('loose')
   })
 })
 
-describe('hasManualGroups', () => {
-  it('空编组或全是死牌时为 false', () => {
-    const hand = handOf('上', '大')
-    expect(hasManualGroups([], hand)).toBe(false)
-    expect(hasManualGroups([[9999]], hand)).toBe(false)
-    expect(hasManualGroups([[hand[0]!.id]], hand)).toBe(true)
+describe('createSlots', () => {
+  it('生成 8 个空列', () => {
+    const slots = createSlots()
+    expect(slots).toHaveLength(HAND_SLOTS)
+    expect(slots.every((slot) => slot.length === 0)).toBe(true)
   })
 })

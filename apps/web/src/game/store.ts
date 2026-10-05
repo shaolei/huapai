@@ -26,10 +26,8 @@ import { useSyncExternalStore } from 'react'
 import {
   type Arrangement,
   buildColumns,
-  hasManualGroups,
-  mergeCards,
-  pruneArrangement,
-  ungroupCard,
+  moveCardToSlot,
+  normalizeSlots,
 } from './arrangement'
 
 /** 人类玩家永远坐 0 号位（底部）。 */
@@ -63,8 +61,10 @@ export interface StoreOptions {
 export class GameStore {
   private state: GameState
   private selectedCardId: number | null = null
-  /** 玩家手工分的组（牌 id）。空 = 全自动编排。 */
+  /** 玩家手工分的组（牌 id）。空 = 用引擎的语义分组。 */
   private arrangement: Arrangement = []
+  /** 玩家是否手工理过牌（决定「自动理牌」按钮）。 */
+  private manual = false
   private snapshot: StoreSnapshot
   private timer: ReturnType<typeof setTimeout> | null = null
   private readonly listeners = new Set<() => void>()
@@ -102,14 +102,15 @@ export class GameStore {
       difficulty: this.difficulty,
       seed: this.seed,
       columns: buildColumns(hand, this.arrangement),
-      hasManualArrangement: hasManualGroups(this.arrangement, hand),
+      hasManualArrangement: this.manual,
     }
   }
 
-  /** 打牌/摸牌之后把人手组里已经不在手上的牌剪掉。 */
+  /** 打牌/摸牌之后把死牌剪掉，并重新补齐到 8 列。 */
   private syncArrangement(): void {
+    if (!this.manual) return
     const hand = this.state.players[HUMAN_SEAT]?.hand ?? []
-    this.arrangement = pruneArrangement(this.arrangement, hand)
+    this.arrangement = normalizeSlots(hand, this.arrangement)
   }
 
   private emit(): void {
@@ -124,30 +125,28 @@ export class GameStore {
     this.state = createGame({ seed: this.seed, dealer: 0 })
     this.selectedCardId = null
     this.arrangement = []
+    this.manual = false
     this.emit()
     this.pump()
   }
 
   /**
-   * 理牌：把 `fromId` 拖到 `toId` 所在的列上，两者并成一列。
+   * 理牌：把一张牌**移动**到第 `slot` 列（追加到该列末尾）。
+   *
+   * 注意是移动、不是交换 —— 源列少一张、目标列多一张，其余列完全不动。
    * 这是纯 UI 行为，不改变任何规则状态。
    */
-  mergeCards(fromId: number, toId: number): void {
+  moveCardToSlot(cardId: number, slot: number): void {
     const hand = this.state.players[HUMAN_SEAT]?.hand ?? []
-    this.arrangement = mergeCards(hand, this.arrangement, fromId, toId)
+    this.arrangement = moveCardToSlot(hand, this.arrangement, cardId, slot)
+    this.manual = true
     this.emit()
   }
 
-  /** 理牌：把一张牌从它的组里拆出来，回到自动编排。 */
-  ungroupCard(cardId: number): void {
-    const hand = this.state.players[HUMAN_SEAT]?.hand ?? []
-    this.arrangement = ungroupCard(hand, this.arrangement, cardId)
-    this.emit()
-  }
-
-  /** 一键回到引擎的自动编排（最优分解）。 */
+  /** 一键回到引擎的语义分组（最优分解）。 */
   autoArrange(): void {
     this.arrangement = []
+    this.manual = false
     this.emit()
   }
 

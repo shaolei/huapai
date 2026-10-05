@@ -1,6 +1,5 @@
 import {
   type Card,
-  type ColumnKind,
   type DiscardRecord,
   type GameAction,
   type MeldGroup,
@@ -27,20 +26,33 @@ interface DragState {
   readonly x: number
   readonly y: number
   readonly moved: boolean
-  readonly overId: number | null
+  /** 当前悬停在哪一列；`-1` = 弃牌区；`null` = 没有落点。 */
+  readonly overSlot: number | null
 }
 
-/** 指针下面是哪张手牌。`elementFromPoint` 在 jsdom 里可能没有，做兜底。 */
-function hitTestCardId(x: number, y: number): number | null {
+/** 落点：某一列，或者弃牌区。 */
+interface DropTarget {
+  readonly slot: number | null
+  readonly isDiscardZone: boolean
+}
+
+/** 指针下面是哪一列 / 是不是弃牌区。jsdom 里可能没有 elementFromPoint，做兜底。 */
+function hitTest(x: number, y: number): DropTarget {
+  const empty: DropTarget = { slot: null, isDiscardZone: false }
   if (typeof document === 'undefined' || typeof document.elementFromPoint !== 'function') {
-    return null
+    return empty
   }
   const element = document.elementFromPoint(x, y)
-  const holder = element?.closest('[data-card-id]')
-  if (!holder) return null
-  const raw = holder.getAttribute('data-card-id')
-  const id = raw === null ? Number.NaN : Number(raw)
-  return Number.isFinite(id) ? id : null
+  if (!element) return empty
+
+  // 弃牌区优先：它比列大，先判它不会被误判成列
+  if (element.closest('[data-drop="discard"]')) {
+    return { slot: null, isDiscardZone: true }
+  }
+  const slotHolder = element.closest('[data-slot]')
+  const raw = slotHolder?.getAttribute('data-slot') ?? null
+  const slot = raw === null ? Number.NaN : Number(raw)
+  return { slot: Number.isFinite(slot) ? slot : null, isDiscardZone: false }
 }
 
 const SEAT_LABEL: Readonly<Record<number, string>> = { 1: '上家', 2: '下家' }
@@ -52,15 +64,6 @@ const VIA_LABEL: Readonly<Record<MeldGroup['via'], string>> = {
 }
 /** 牌墙满值（3 人局 110 张：25+25+26 发完剩 34）。用于画进度条。 */
 const WALL_FULL = 34
-
-/** 这一列是什么 —— 标在列底那张完整可见的牌上。 */
-function columnBadge(kind: ColumnKind, count: number): string {
-  if (kind === 'same') return count >= 5 ? '泛' : count === 4 ? '扎' : '坎'
-  if (kind === 'sentence') return '句'
-  if (kind === 'kou') return '口'
-  if (kind === 'pair') return '对'
-  return '散'
-}
 
 /**
  * 副露：直接画小缩略图，而不是「字×张数」的文字。
@@ -90,46 +93,51 @@ function OpponentPanel({
   seat,
   isActing,
   discards,
+  side,
 }: {
   player: PlayerState
   ruleSet: RuleSet
   seat: number
   isActing: boolean
   discards: readonly DiscardRecord[]
+  side: 'left' | 'right'
 }) {
   return (
-    <section className={`hz-seat${isActing ? ' is-acting' : ''}`}>
-      <header className="hz-seat__head">
-        <span className="hz-seat__name">
-          {SEAT_LABEL[seat] ?? seat}（AI）
-        </span>
-        <span className="hz-seat__count">{player.hand.length} 张</span>
-      </header>
+    <section className={`hz-seat hz-seat--${side}${isActing ? ' is-acting' : ''}`}>
+      <div className="hz-seat__info">
+        <header className="hz-seat__head">
+          <span className="hz-seat__name">
+            {SEAT_LABEL[seat] ?? seat}（AI）
+          </span>
+          <span className="hz-seat__count">{player.hand.length} 张</span>
+        </header>
 
-      <div className="hz-seat__melds">
-        {player.melds.length === 0 ? (
-          <span className="hz-hint">无副露</span>
-        ) : (
-          player.melds.map((meld, index) => (
-            <MeldRow key={`${meld.char}-${index}`} meld={meld} ruleSet={ruleSet} />
-          ))
-        )}
+        <div className="hz-seat__melds">
+          {player.melds.length === 0 ? (
+            <span className="hz-hint">无副露</span>
+          ) : (
+            player.melds.map((meld, index) => (
+              <MeldRow key={`${meld.char}-${index}`} meld={meld} ruleSet={ruleSet} />
+            ))
+          )}
+        </div>
+
+        {player.duiCount > 0 ? <span className="hz-hint">已对 {player.duiCount} 对</span> : null}
       </div>
 
-      {/* 打出的牌就贴在这家信息下方 —— 放在中央的话根本分不清是谁打的 */}
+      {/* 弃牌朝中央展开：左家在信息栏**右侧**，右家在信息栏**左侧**。
+          放在信息栏下面会越堆越高，最后看不全。 */}
       <div className="hz-seat__discards">
         {discards.length === 0 ? (
           <span className="hz-hint">未出牌</span>
         ) : (
-          discards.slice(-14).map((record, index) => (
+          discards.slice(-12).map((record, index) => (
             <span key={`${record.card.id}-${index}`} className="hz-discard">
               <CardFace card={record.card} ruleSet={ruleSet} small />
             </span>
           ))
         )}
       </div>
-
-      {player.duiCount > 0 ? <span className="hz-hint">已对 {player.duiCount} 对</span> : null}
     </section>
   )
 }
@@ -161,7 +169,14 @@ export function TableScreen({ store, snap }: { store: GameStore; snap: StoreSnap
 
   const columns = snap.columns
   const layout = useMemo(
-    () => layoutHand({ columns, availableWidth: band.width, availableHeight: band.height }),
+    () =>
+      layoutHand({
+        columns,
+        availableWidth: band.width,
+        availableHeight: band.height,
+        // 手牌是固定 8 列，布局层不许再打包/分块，否则拖拽语义就废了
+        packing: false,
+      }),
     [columns, band.width, band.height],
   )
 
@@ -187,7 +202,7 @@ export function TableScreen({ store, snap }: { store: GameStore; snap: StoreSnap
       x: event.clientX,
       y: event.clientY,
       moved: false,
-      overId: null,
+      overSlot: null,
     }
     dragRef.current = next
     setDragView(next)
@@ -195,23 +210,23 @@ export function TableScreen({ store, snap }: { store: GameStore; snap: StoreSnap
 
   const handleDrop = useCallback(
     (current: DragState, event: PointerEvent): void => {
-      const target = hitTestCardId(event.clientX, event.clientY)
-      if (current.moved && target !== null && target !== current.cardId) {
-        store.mergeCards(current.cardId, target)
-        return
-      }
+      const target = hitTest(event.clientX, event.clientY)
+
       if (current.moved) {
-        // 拖到空白处 = 从组里拆出来（只在手牌区内生效，避免误触）
-        const band = handRef.current?.getBoundingClientRect()
-        const inside =
-          band !== undefined &&
-          event.clientX >= band.left &&
-          event.clientX <= band.right &&
-          event.clientY >= band.top &&
-          event.clientY <= band.bottom
-        if (inside) store.ungroupCard(current.cardId)
+        // 拖到弃牌区 = 打出这张牌（只在轮到自己、且这张确实可打时生效）
+        if (target.isDiscardZone) {
+          if (discardable.has(current.cardId)) {
+            store.play({ type: 'discard', seat: HUMAN_SEAT, cardId: current.cardId })
+          }
+          return
+        }
+        // 拖到某一列 = **移动**过去（不是交换：其余列原地不动）
+        if (target.slot !== null) {
+          store.moveCardToSlot(current.cardId, target.slot)
+        }
         return
       }
+
       // 没怎么动 = 点选
       if (discardable.has(current.cardId)) {
         store.select(snap.selectedCardId === current.cardId ? null : current.cardId)
@@ -233,7 +248,7 @@ export function TableScreen({ store, snap }: { store: GameStore; snap: StoreSnap
         x: event.clientX,
         y: event.clientY,
         moved,
-        overId: moved ? hitTestCardId(event.clientX, event.clientY) : null,
+        overSlot: moved ? hitTest(event.clientX, event.clientY).slot : null,
       }
       dragRef.current = next
       setDragView(next)
@@ -325,6 +340,7 @@ export function TableScreen({ store, snap }: { store: GameStore; snap: StoreSnap
           seat={1}
           isActing={acting === 1}
           discards={discardsBySeat[1] ?? []}
+          side="left"
         />
 
         <section className="hz-center">
@@ -338,7 +354,8 @@ export function TableScreen({ store, snap }: { store: GameStore; snap: StoreSnap
             </span>
             <span className="hz-wall__num">{state.wall.length}</span>
           </div>
-          <div className="hz-discards">
+          {/* data-drop="discard"：把牌拖到这里就是打出 */}
+          <div className="hz-discards" data-drop="discard">
             {(discardsBySeat[HUMAN_SEAT] ?? []).length === 0 ? (
               <span className="hz-hint">你还没打牌</span>
             ) : (
@@ -357,6 +374,7 @@ export function TableScreen({ store, snap }: { store: GameStore; snap: StoreSnap
           seat={2}
           isActing={acting === 2}
           discards={discardsBySeat[2] ?? []}
+          side="right"
         />
       </main>
 
@@ -376,22 +394,27 @@ export function TableScreen({ store, snap }: { store: GameStore; snap: StoreSnap
               ['--hz-band' as string]: `${layout.stackStep}px`,
             }}
           >
-            {layout.placed.map((column) => (
+            {layout.placed.map((column, slotIndex) => (
               <div
                 key={column.key}
-                className={`hz-col hz-col--${column.kind}${column.packed ? ' is-packed' : ''}`}
+                className={'hz-col' + (dragView?.overSlot === slotIndex ? ' is-drop-target' : '')}
+                data-slot={slotIndex}
                 style={{
                   left: column.x,
                   width: layout.cardWidth,
                   height: column.height,
                 }}
               >
+                {/* 空列也保留可见的落点，这样玩家能主动把牌拖到一个空列 */}
+                {column.cards.length === 0 ? (
+                  <span className="hz-col__empty" style={{ height: layout.cardHeight }} />
+                ) : null}
+
                 {column.cards.map((card, index) => (
                   <div
                     key={card.id}
                     className={
                       'hz-col__slot' +
-                      (dragView?.overId === card.id ? ' is-drop-target' : '') +
                       (dragView?.cardId === card.id && dragView.moved ? ' is-dragging' : '')
                     }
                     data-card-id={card.id}
@@ -406,11 +429,6 @@ export function TableScreen({ store, snap }: { store: GameStore; snap: StoreSnap
                       card={card}
                       ruleSet={ruleSet}
                       selected={snap.selectedCardId === card.id}
-                      badge={
-                        index === column.cards.length - 1
-                          ? columnBadge(column.kind, column.cards.length)
-                          : undefined
-                      }
                     />
                   </div>
                 ))}
