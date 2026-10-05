@@ -1,6 +1,7 @@
 import {
   type Card,
   type ColumnKind,
+  type DiscardRecord,
   type GameAction,
   type MeldGroup,
   type PlayerState,
@@ -61,15 +62,24 @@ function columnBadge(kind: ColumnKind, count: number): string {
   return '散'
 }
 
-function MeldChip({ meld, ruleSet }: { meld: MeldGroup; ruleSet: RuleSet }) {
-  const hasFlower = meld.cards.some((card) => card.variant === 'flower')
+/**
+ * 副露：直接画小缩略图，而不是「字×张数」的文字。
+ *
+ * 文字看不出「花精还是素精」「有没有带花」，而这两件事直接影响胡数 ——
+ * 所以看对手副露时缩略图比文字信息量大得多。
+ */
+function MeldRow({ meld, ruleSet }: { meld: MeldGroup; ruleSet: RuleSet }) {
   return (
-    <span className={`hz-chip${meld.revealed ? ' is-open' : ' is-hidden'}`}>
-      <b>{meld.char}</b>
-      <em>×{meld.cards.length}</em>
-      <i>{VIA_LABEL[meld.via]}</i>
-      {hasFlower ? <i className="hz-mark hz-mark--flower">花</i> : null}
-      {ruleSet.jingChars.includes(meld.char) ? <i className="hz-mark hz-mark--jing">精</i> : null}
+    <span
+      className={`hz-meld${meld.revealed ? ' is-open' : ''}`}
+      title={`${VIA_LABEL[meld.via]}${meld.revealed ? '（明）' : '（暗）'}`}
+    >
+      <i className="hz-meld__tag">{VIA_LABEL[meld.via]}</i>
+      <span className="hz-meld__cards">
+        {meld.cards.map((card) => (
+          <CardFace key={card.id} card={card} ruleSet={ruleSet} small />
+        ))}
+      </span>
     </span>
   )
 }
@@ -79,11 +89,13 @@ function OpponentPanel({
   ruleSet,
   seat,
   isActing,
+  discards,
 }: {
   player: PlayerState
   ruleSet: RuleSet
   seat: number
   isActing: boolean
+  discards: readonly DiscardRecord[]
 }) {
   return (
     <section className={`hz-seat${isActing ? ' is-acting' : ''}`}>
@@ -93,15 +105,30 @@ function OpponentPanel({
         </span>
         <span className="hz-seat__count">{player.hand.length} 张</span>
       </header>
+
       <div className="hz-seat__melds">
         {player.melds.length === 0 ? (
           <span className="hz-hint">无副露</span>
         ) : (
           player.melds.map((meld, index) => (
-            <MeldChip key={`${meld.char}-${index}`} meld={meld} ruleSet={ruleSet} />
+            <MeldRow key={`${meld.char}-${index}`} meld={meld} ruleSet={ruleSet} />
           ))
         )}
       </div>
+
+      {/* 打出的牌就贴在这家信息下方 —— 放在中央的话根本分不清是谁打的 */}
+      <div className="hz-seat__discards">
+        {discards.length === 0 ? (
+          <span className="hz-hint">未出牌</span>
+        ) : (
+          discards.slice(-14).map((record, index) => (
+            <span key={`${record.card.id}-${index}`} className="hz-discard">
+              <CardFace card={record.card} ruleSet={ruleSet} small />
+            </span>
+          ))
+        )}
+      </div>
+
       {player.duiCount > 0 ? <span className="hz-hint">已对 {player.duiCount} 对</span> : null}
     </section>
   )
@@ -247,7 +274,20 @@ export function TableScreen({ store, snap }: { store: GameStore; snap: StoreSnap
   )
   const passAction = snap.legal.find((action) => action.type === 'pass')
 
-  const recentDiscards = state.discards.slice(-16)
+  // 弃牌按座位分开：AI 的贴在自己信息栏下方，中央只留自己的 ——
+  // 混在中央的话根本分不清是谁打的。
+  const discardsBySeat = useMemo(() => {
+    const map: DiscardRecord[][] = [[], [], []]
+    for (const record of state.discards) {
+      let bucket = map[record.seat]
+      if (!bucket) {
+        bucket = []
+        map[record.seat] = bucket
+      }
+      bucket.push(record)
+    }
+    return map
+  }, [state.discards])
 
   // 口径②：主精按人判定 —— 手上该精张数最多者，会随摸打变化，所以每帧重算。
   const mainJing = useMemo(
@@ -284,6 +324,7 @@ export function TableScreen({ store, snap }: { store: GameStore; snap: StoreSnap
           ruleSet={ruleSet}
           seat={1}
           isActing={acting === 1}
+          discards={discardsBySeat[1] ?? []}
         />
 
         <section className="hz-center">
@@ -298,15 +339,11 @@ export function TableScreen({ store, snap }: { store: GameStore; snap: StoreSnap
             <span className="hz-wall__num">{state.wall.length}</span>
           </div>
           <div className="hz-discards">
-            {recentDiscards.length === 0 ? (
-              <span className="hz-hint">还没有人打牌</span>
+            {(discardsBySeat[HUMAN_SEAT] ?? []).length === 0 ? (
+              <span className="hz-hint">你还没打牌</span>
             ) : (
-              recentDiscards.map((record, index) => (
-                <span
-                  key={`${record.card.id}-${index}`}
-                  className="hz-discard"
-                  title={`${SEAT_LABEL[record.seat] ?? '你'}打出`}
-                >
+              (discardsBySeat[HUMAN_SEAT] ?? []).slice(-18).map((record, index) => (
+                <span key={`${record.card.id}-${index}`} className="hz-discard">
                   <CardFace card={record.card} ruleSet={ruleSet} small />
                 </span>
               ))
@@ -319,12 +356,13 @@ export function TableScreen({ store, snap }: { store: GameStore; snap: StoreSnap
           ruleSet={ruleSet}
           seat={2}
           isActing={acting === 2}
+          discards={discardsBySeat[2] ?? []}
         />
       </main>
 
       <footer className="hz-hand-band">
         <div
-          className="hz-hand"
+          className={`hz-hand${layout.scrolls ? ' is-scrollable' : ''}`}
           ref={handRef}
           style={{ overflowX: layout.scrolls ? 'auto' : 'hidden' }}
         >
@@ -396,7 +434,7 @@ export function TableScreen({ store, snap }: { store: GameStore; snap: StoreSnap
             <span className="hz-hint">无</span>
           ) : (
             human.melds.map((meld, index) => (
-              <MeldChip key={`${meld.char}-${index}`} meld={meld} ruleSet={ruleSet} />
+              <MeldRow key={`${meld.char}-${index}`} meld={meld} ruleSet={ruleSet} />
             ))
           )}
         </div>

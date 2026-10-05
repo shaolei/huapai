@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      牌桌底色。
+
+      用途：窗口背景 + 状态栏/导航栏颜色。挖孔屏横屏时，刘海那一侧（短边）由系统
+      用「窗口背景」填充 —— 而 AppCompat 的 DayNight 主题在深色模式下会给出
+      #121212 那种灰，和牌桌的绿放在一起非常割裂。
+
+      这个值必须与 apps/web/src/styles/global.css 里的 --hz-felt-0 保持一致，
+      改一个就要改另一个。
+    -->
+    <color name="huapai_felt">#FF0D3B24</color>
+</resources>

@@ -267,6 +267,16 @@ body {
 .hz-col__slot {
   position: absolute;
   left: 0;
+  /* 关键：必须是 none。
+     全局的 touch-action: manipulation 仍然允许浏览器接管「平移」手势，
+     于是手指一拖，浏览器把它当成页面滚动吃掉，我们收不到 pointermove，
+     拖拽理牌就永远不生效（表现为「拖了没反应，只能点选」）。 */
+  touch-action: none;
+}
+
+/* 手牌需要横向滚动时才把平移手势还给浏览器 */
+.hz-hand.is-scrollable .hz-col__slot {
+  touch-action: pan-x;
 }
 
 .hz-hand-band__melds {
@@ -418,6 +428,59 @@ body {
 
 .hz-card.is-small .hz-card__char {
   font-size: 13px;
+}
+
+/* ============================================================
+   副露：小缩略图（对 / 招 / 扎 / 泛）
+   ============================================================ */
+
+.hz-meld {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 2px;
+  border: 1px solid var(--hz-line);
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.hz-meld.is-open {
+  border-color: rgba(255, 207, 92, 0.5);
+}
+
+.hz-meld__tag {
+  font-style: normal;
+  font-size: 9px;
+  line-height: 1;
+  color: var(--hz-accent);
+  text-align: center;
+}
+
+.hz-meld__cards {
+  display: flex;
+  gap: 1px;
+}
+
+/* 副露缩略图比弃牌再小一档：一个「泛」有 5 张，要在 104px 的侧栏里排下 */
+.hz-meld__cards .hz-card.is-small {
+  --hz-band: 15px;
+  width: 14px;
+  height: 23px;
+}
+
+.hz-meld__cards .hz-card.is-small .hz-card__char {
+  font-size: 10px;
+}
+
+/* AI 打出的牌贴在自己信息栏下方 —— 这样一眼能分清是谁打的 */
+.hz-seat__discards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  align-content: flex-start;
+  overflow: hidden;
+  min-height: 0;
+  flex: 1 1 auto;
 }
 
 /* ============================================================
